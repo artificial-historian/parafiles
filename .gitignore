@@ -1,9 +1,75 @@
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
-*.pyc.*
+*$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+.hypothesis/
+
+# Virtual environments
 .venv/
+venv/
+env/
+ENV/
+
+# Test and coverage output
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# Django/local runtime data
 db.sqlite3
+db.sqlite3-*
+*.sqlite3
+*.sqlite3-*
 var/
 staticfiles/
+media/
+local_settings.py
+celerybeat-schedule*
+*.pid
+*.sock
+
+# Environment and secret files
 .env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+deploy/*.env
+!deploy/*.env.example
+
+# Logs
+*.log
+logs/
+
+# Node/frontend dependencies and build artifacts
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+dist/
+build/
+
+# Python packaging artifacts
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+wheelhouse/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+.vscode/
+.idea/
