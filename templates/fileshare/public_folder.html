@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ folder.display_name }} - Parafiles{% endblock %}
+{% block robots %}<meta name="robots" content="noindex,nofollow">{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>{{ folder.display_name }}</h1>
+  <p class="muted">Shared folder from Parafiles.</p>
+</section>
+
+<section class="panel">
+  <h2>Files</h2>
+  {% for item in tree %}
+    <div class="folder-group" style="--depth: {{ item.depth }}">
+      <h3>{{ item.relative_path }}</h3>
+      {% for file in item.files %}
+        <div class="list-row split">
+          <span>{{ file.original_filename }} <span class="muted">{{ file.size|filesizeformat }}</span></span>
+          <form method="post" action="{% url 'prepare_download_file' share.slug file.pk %}">
+            {% csrf_token %}
+            <button type="submit">Download</button>
+          </form>
+        </div>
+      {% empty %}
+        <p class="muted">No downloadable files in this folder.</p>
+      {% endfor %}
+    </div>
+  {% endfor %}
+</section>
+
+<section class="narrow panel">
+  <h2>Report This Folder</h2>
+  <form method="post" action="{% url 'report_share' share.slug %}" class="stack">
+    {% csrf_token %}
+    {{ report_form.as_p }}
+    <button type="submit">Submit report</button>
+  </form>
+</section>
+{% endblock %}

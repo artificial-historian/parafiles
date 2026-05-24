@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Rate Limits - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Rate Limits</h1>
+    <p class="muted">Anti-leech warnings, slowdowns, and blocks recorded by throttling checks.</p>
+  </div>
+  <div class="actions">
+    <a href="{% url 'moderation_operations_health' %}">Operations</a>
+    <a href="{% url 'moderation_action_log' %}">Audit log</a>
+    <a href="{% url 'moderation_dashboard' %}">Back to moderation</a>
+  </div>
+</section>
+
+<section class="metrics">
+  <div class="metric"><span>Warnings</span><strong>{{ summary.warn }}</strong><small>threshold reached</small></div>
+  <div class="metric"><span>Slowdowns</span><strong>{{ summary.slow }}</strong><small>rate limited</small></div>
+  <div class="metric"><span>Blocks</span><strong>{{ summary.block }}</strong><small>request denied</small></div>
+</section>
+
+<section class="panel">
+  <h2>Filters</h2>
+  <form method="get" class="filter-grid">
+    {{ filter_form.as_p }}
+    <div class="filter-actions">
+      <button type="submit">Apply filters</button>
+      <a href="{% url 'moderation_rate_limit_events' %}">Reset</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Events</h2>
+  <div class="table rate-events">
+    <div class="table-head">Action</div>
+    <div class="table-head">Scope</div>
+    <div class="table-head">Count</div>
+    <div class="table-head">Key</div>
+    <div class="table-head">Time</div>
+    {% for event in events %}
+      <div>{{ event.get_action_display }}</div>
+      <div>{{ event.scope }}</div>
+      <div>{{ event.count }}</div>
+      <div>
+        <span class="hash">{{ event.key }}</span>
+        {% if event.ip_hash %}<p class="muted hash">IP {{ event.ip_hash }}</p>{% endif %}
+        {% if event.user_agent_hash %}<p class="muted hash">UA {{ event.user_agent_hash }}</p>{% endif %}
+      </div>
+      <div>{{ event.created_at }}</div>
+    {% empty %}
+      <div class="full muted">No rate-limit events match these filters.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Verify 2FA - Parafiles{% endblock %}
+{% block content %}
+<section class="narrow panel">
+  <h1>Verify 2FA</h1>
+  <form method="post" class="stack">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.GET.next }}">
+    {{ form.as_p }}
+    <button type="submit">Verify</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Invitations - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Invitations</h1>
+    <p class="muted">Create single-use uploader registration links and email them to creators.</p>
+  </div>
+  <div class="actions">
+    <a href="{% url 'moderation_users' %}">Users</a>
+    <a href="{% url 'moderation_dashboard' %}">Back to moderation</a>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Create Invitation</h2>
+  <form method="post" class="filter-grid">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="filter-actions">
+      <button type="submit">Create invite</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Recent Invitations</h2>
+  <div class="table invitations-table">
+    <div class="table-head">Email</div>
+    <div class="table-head">Status</div>
+    <div class="table-head">Expires</div>
+    <div class="table-head">Actions</div>
+    {% for invitation in invitations %}
+      <div>{{ invitation.email|default:"No email" }}</div>
+      <div>
+        {% if invitation.accepted_at %}
+          <span class="status ok">Accepted</span>
+          <p class="muted">{{ invitation.accepted_by }}</p>
+        {% elif invitation.is_usable %}
+          <span class="status available">Usable</span>
+        {% else %}
+          <span class="status error">Expired</span>
+        {% endif %}
+      </div>
+      <div>{{ invitation.expires_at }}</div>
+      <div class="actions">
+        <span class="hash">{{ request.scheme }}://{{ request.get_host }}{% url 'register_invite' invitation.token %}</span>
+        <form method="post" action="{% url 'moderation_invitation_resend' invitation.pk %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Resend</button>
+        </form>
+      </div>
+    {% empty %}
+      <div class="full muted">No invitations yet.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

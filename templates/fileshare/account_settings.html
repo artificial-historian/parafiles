@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Account - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Account</h1>
+    <p class="muted">Storage, quota, shares, and recent download activity.</p>
+  </div>
+</section>
+
+<section class="metrics">
+  <div class="metric">
+    <span>Storage used</span>
+    <strong>{{ used_bytes|filesizeformat }}</strong>
+    <small>of {{ quota.storage_quota_bytes|filesizeformat }}</small>
+  </div>
+  <div class="metric">
+    <span>Files</span>
+    <strong>{{ file_count }}</strong>
+    <small>limit {{ quota.max_file_count }}</small>
+  </div>
+  <div class="metric">
+    <span>Folders</span>
+    <strong>{{ folder_count }}</strong>
+    <small>depth limit {{ quota.folder_depth_limit }}</small>
+  </div>
+  <div class="metric">
+    <span>Max file size</span>
+    <strong>{{ quota.max_file_size_bytes|filesizeformat }}</strong>
+    <small>per upload</small>
+  </div>
+</section>
+
+<section class="grid-two">
+  <div class="panel">
+    <h2>Profile</h2>
+    <form method="post" class="stack">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Save</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Active Limits</h2>
+    <dl class="meta">
+      <div><dt>Storage</dt><dd>{{ quota.storage_quota_bytes|filesizeformat }}</dd></div>
+      <div><dt>File size</dt><dd>{{ quota.max_file_size_bytes|filesizeformat }}</dd></div>
+      <div><dt>File count</dt><dd>{{ quota.max_file_count }}</dd></div>
+      <div><dt>Folder depth</dt><dd>{{ quota.folder_depth_limit }}</dd></div>
+    </dl>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Shares</h2>
+  <div class="table shares-table">
+    <div class="table-head">Type</div>
+    <div class="table-head">Target</div>
+    <div class="table-head">State</div>
+    <div class="table-head">Actions</div>
+    {% for share in shares %}
+      <div>{{ share.get_target_type_display }}</div>
+      <div>
+        {% if share.stored_file_id %}
+          {{ share.stored_file.original_filename }}
+        {% else %}
+          {{ share.folder.logical_path }}
+        {% endif %}
+      </div>
+      <div>{% if share.is_live %}Live{% else %}Disabled{% endif %}</div>
+      <div class="actions">
+        <details class="action-menu">
+          <summary>Settings</summary>
+          <form method="post" action="{% url 'share_update' share.pk %}" class="stack">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <label>
+              <input type="checkbox" name="is_enabled" value="on" {% if share.is_enabled %}checked{% endif %}>
+              Enabled
+            </label>
+            <label>
+              Expires at
+              <input type="datetime-local" name="expires_at" value="{{ share.expires_at|date:'Y-m-d\\TH:i' }}">
+            </label>
+            <label>
+              <input type="checkbox" name="clear_expiration" value="on">
+              Clear expiration
+            </label>
+            <button type="submit">Save settings</button>
+          </form>
+        </details>
+        {% if share.stored_file_id %}
+          <a href="{% url 'public_file' share.slug %}">Open</a>
+          <form method="post" action="{% url 'share_toggle' 'file' share.stored_file_id %}">
+            {% csrf_token %}
+            <input type="hidden" name="enabled" value="0">
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button class="danger">Disable</button>
+          </form>
+        {% else %}
+          <a href="{% url 'public_folder' share.slug %}">Open</a>
+          <form method="post" action="{% url 'share_toggle' 'folder' share.folder_id %}">
+            {% csrf_token %}
+            <input type="hidden" name="enabled" value="0">
+            <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <button class="danger">Disable</button>
+          </form>
+        {% endif %}
+      </div>
+    {% empty %}
+      <div class="full muted">No shares yet.</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Recent Downloads</h2>
+  <div class="table downloads-table">
+    <div class="table-head">File</div>
+    <div class="table-head">Outcome</div>
+    <div class="table-head">Bytes</div>
+    <div class="table-head">Time</div>
+    {% for event in recent_downloads %}
+      <div>{{ event.stored_file.original_filename }}</div>
+      <div>{{ event.get_outcome_display }}</div>
+      <div>{{ event.bytes_served|filesizeformat }}</div>
+      <div>{{ event.created_at }}</div>
+    {% empty %}
+      <div class="full muted">No download activity yet.</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Scan Status</h2>
+  <div class="table scan-table">
+    <div class="table-head">File</div>
+    <div class="table-head">Status</div>
+    <div class="table-head">Completed</div>
+    <div class="table-head">Latest Result</div>
+    {% for file in recent_scans %}
+      <div>{{ file.original_filename }}</div>
+      <div><span class="status {{ file.status }}">{{ file.get_status_display }}</span></div>
+      <div>{{ file.scan_completed_at|default:"Pending" }}</div>
+      <div>
+        {% for result in file.scan_results.all|slice:":1" %}
+          {{ result.get_engine_display }}: {{ result.get_status_display }}
+        {% empty %}
+          <span class="muted">No scan result yet</span>
+        {% endfor %}
+      </div>
+    {% empty %}
+      <div class="full muted">No files have been scanned yet.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

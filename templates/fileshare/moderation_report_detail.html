@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Report {{ report.pk }} - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Report {{ report.pk }}</h1>
+    <p class="muted">{{ report.get_category_display }} - {{ report.get_status_display }}</p>
+  </div>
+  <div class="actions">
+    <a href="{% url 'moderation_action_log' %}">Audit log</a>
+    <a href="{% url 'moderation_dashboard' %}">Back to moderation</a>
+  </div>
+</section>
+
+<section class="grid-two">
+  <div class="panel">
+    <h2>Report</h2>
+    <dl class="meta">
+      <div><dt>Created</dt><dd>{{ report.created_at }}</dd></div>
+      <div><dt>Reporter</dt><dd class="hash">{{ report.reporter_ip_hash }}</dd></div>
+      {% if report.contact_email %}<div><dt>Contact</dt><dd>{{ report.contact_email }}</dd></div>{% endif %}
+      {% if report.assigned_to %}<div><dt>Assigned</dt><dd>{{ report.assigned_to }}</dd></div>{% endif %}
+    </dl>
+    <p>{{ report.message|linebreaksbr }}</p>
+    <form method="post" action="{% url 'moderate_report_update' report.pk %}" class="stack">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      {{ form.as_p }}
+      <button type="submit">Update report</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Target</h2>
+    {% if report.stored_file %}
+      <dl class="meta">
+        <div><dt>File</dt><dd>{{ report.stored_file.original_filename }}</dd></div>
+        <div><dt>Status</dt><dd>{{ report.stored_file.get_status_display }}</dd></div>
+        <div><dt>Owner</dt><dd>{{ report.stored_file.owner }}</dd></div>
+        <div><dt>SHA-256</dt><dd class="hash">{{ report.stored_file.sha256 }}</dd></div>
+      </dl>
+      <div class="actions">
+        <form method="post" action="{% url 'moderate_file' report.stored_file.pk 'hide' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Hide file</button>
+        </form>
+        <form method="post" action="{% url 'moderate_file' report.stored_file.pk 'quarantine' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Quarantine</button>
+        </form>
+        <form method="post" action="{% url 'moderate_file' report.stored_file.pk 'restore' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Restore</button>
+        </form>
+        <form method="post" action="{% url 'moderate_file' report.stored_file.pk 'rescan' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Rescan</button>
+        </form>
+        <form method="post" action="{% url 'moderate_file' report.stored_file.pk 'delete' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="danger">Delete</button>
+        </form>
+        <form method="post" action="{% url 'moderate_file' report.stored_file.pk 'purge' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="danger">Purge bytes</button>
+        </form>
+      </div>
+    {% elif report.folder %}
+      <dl class="meta">
+        <div><dt>Folder</dt><dd>{{ report.folder.logical_path }}</dd></div>
+        <div><dt>Owner</dt><dd>{{ report.folder.owner }}</dd></div>
+        <div><dt>State</dt><dd>{% if report.folder.is_deleted %}Hidden{% else %}Visible{% endif %}</dd></div>
+      </dl>
+      <div class="actions">
+        <form method="post" action="{% url 'moderate_folder' report.folder.pk 'hide' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Hide folder</button>
+        </form>
+        <form method="post" action="{% url 'moderate_folder' report.folder.pk 'restore' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Restore folder</button>
+        </form>
+        <form method="post" action="{% url 'moderate_folder' report.folder.pk 'purge' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="danger">Purge folder</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="muted">The reported target is no longer attached.</p>
+    {% endif %}
+
+    {% if report.share %}
+      <h3>Public Share</h3>
+      <dl class="meta">
+        <div><dt>Slug</dt><dd class="hash">{{ report.share.slug }}</dd></div>
+        <div><dt>Type</dt><dd>{{ report.share.get_target_type_display }}</dd></div>
+        <div><dt>State</dt><dd>{% if report.share.is_live %}Live{% else %}Disabled{% endif %}</dd></div>
+        <div><dt>Expires</dt><dd>{{ report.share.expires_at|default:"Never" }}</dd></div>
+        <div>
+          <dt>URL</dt>
+          <dd>
+            {% if report.share.target_type == "file" %}
+              <a href="{% url 'public_file' report.share.slug %}">{{ request.scheme }}://{{ request.get_host }}{% url 'public_file' report.share.slug %}</a>
+            {% else %}
+              <a href="{% url 'public_folder' report.share.slug %}">{{ request.scheme }}://{{ request.get_host }}{% url 'public_folder' report.share.slug %}</a>
+            {% endif %}
+          </dd>
+        </div>
+      </dl>
+      <div class="actions">
+        <form method="post" action="{% url 'moderate_share' report.share.pk 'hide' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="danger">Disable share</button>
+        </form>
+        <form method="post" action="{% url 'moderate_share' report.share.pk 'restore' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Restore share</button>
+        </form>
+        <form method="post" action="{% url 'moderate_share' report.share.pk 'regenerate_share' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Regenerate link</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Related Reports</h2>
+  <div class="table reports-related">
+    <div class="table-head">Report</div>
+    <div class="table-head">Status</div>
+    <div class="table-head">Message</div>
+    <div class="table-head">Created</div>
+    {% for related in related_reports %}
+      <div><a href="{% url 'moderation_report_detail' related.pk %}">Report {{ related.pk }}</a></div>
+      <div>{{ related.get_status_display }}</div>
+      <div>{{ related.message|truncatechars:160 }}</div>
+      <div>{{ related.created_at }}</div>
+    {% empty %}
+      <div class="full muted">No related reports.</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Moderation History</h2>
+  <div class="table reports-related">
+    <div class="table-head">Action</div>
+    <div class="table-head">Actor</div>
+    <div class="table-head">Reason</div>
+    <div class="table-head">Time</div>
+    {% for action in actions %}
+      <div>{{ action.get_action_display }}</div>
+      <div>{{ action.actor|default:"System" }}</div>
+      <div>{{ action.reason|default:"-" }}</div>
+      <div>{{ action.created_at }}</div>
+    {% empty %}
+      <div class="full muted">No moderation actions yet.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

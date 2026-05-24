@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Moderation Audit Log - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Audit Log</h1>
+    <p class="muted">Moderation actions across reports, uploads, folders, and public links.</p>
+  </div>
+  <div class="actions">
+    <a href="{% url 'moderation_operations_health' %}">Operations</a>
+    <a href="{% url 'moderation_dashboard' %}">Back to moderation</a>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Filters</h2>
+  <form method="get" class="filter-grid">
+    {{ filter_form.as_p }}
+    <div class="filter-actions">
+      <button type="submit">Apply filters</button>
+      <a href="{% url 'moderation_action_log' %}">Reset</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Actions</h2>
+  <div class="table moderation-actions">
+    <div class="table-head">Action</div>
+    <div class="table-head">Actor</div>
+    <div class="table-head">Target</div>
+    <div class="table-head">Reason</div>
+    <div class="table-head">Time</div>
+    {% for item in actions %}
+      <div>{{ item.get_action_display }}</div>
+      <div>{{ item.actor|default:"System" }}</div>
+      <div class="stack">
+        {% if item.report_id %}
+          <a href="{% url 'moderation_report_detail' item.report_id %}">Report {{ item.report_id }}</a>
+        {% endif %}
+        {% if item.stored_file_id %}
+          <span>File: {{ item.stored_file.original_filename }}</span>
+          <span class="hash">{{ item.stored_file.sha256 }}</span>
+        {% endif %}
+        {% if item.folder_id %}
+          <span>Folder: {{ item.folder.logical_path }}</span>
+        {% endif %}
+        {% if item.share_id %}
+          <span>Share: <span class="hash">{{ item.share.slug }}</span></span>
+        {% endif %}
+        {% if item.target_user_id %}
+          <span>User: {{ item.target_user.username }}</span>
+          {% if item.target_user.email %}<span class="muted">{{ item.target_user.email }}</span>{% endif %}
+        {% endif %}
+        {% if item.metadata %}
+          <span class="hash">{{ item.metadata }}</span>
+        {% endif %}
+      </div>
+      <div>{{ item.reason|default:"-" }}</div>
+      <div>{{ item.created_at }}</div>
+    {% empty %}
+      <div class="full muted">No moderation actions match these filters.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

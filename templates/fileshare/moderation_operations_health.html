@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Operations Health - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Operations Health</h1>
+    <p class="muted">Runtime dependency checks for launch and incident triage.</p>
+  </div>
+  <div class="actions">
+    <a href="{% url 'moderation_rate_limit_events' %}">Rate limits</a>
+    <a href="{% url 'moderation_action_log' %}">Audit log</a>
+    <a href="{% url 'moderation_dashboard' %}">Back to moderation</a>
+  </div>
+</section>
+
+<section class="metrics">
+  <div class="metric">
+    <span>Overall</span>
+    <strong class="status {{ status }}">{{ status|title }}</strong>
+    <small>staff-only diagnostics</small>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Checks</h2>
+  <div class="table operations-checks">
+    <div class="table-head">Check</div>
+    <div class="table-head">Status</div>
+    <div class="table-head">Detail</div>
+    {% for check in checks %}
+      <div>{{ check.name }}</div>
+      <div><span class="status {{ check.status }}">{{ check.status|title }}</span></div>
+      <div class="hash">{{ check.detail }}</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}Moderation - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Moderation</h1>
+    <p class="muted">Search reports, uploads, folders, and apply targeted actions.</p>
+  </div>
+  <div class="actions">
+    <a href="{% url 'moderation_invitations' %}">Invitations</a>
+    <a href="{% url 'moderation_users' %}">Users</a>
+    <a href="{% url 'moderation_operations_health' %}">Operations</a>
+    <a href="{% url 'moderation_action_log' %}">Audit log</a>
+    <a href="{% url 'moderation_rate_limit_events' %}">Rate limits</a>
+  </div>
+</section>
+
+<section class="metrics">
+  <div class="metric"><span>Open reports</span><strong>{{ summary.open_reports }}</strong><small>needs triage</small></div>
+  <div class="metric"><span>Reviewing</span><strong>{{ summary.reviewing_reports }}</strong><small>assigned or active</small></div>
+  <div class="metric"><span>Files in review</span><strong>{{ summary.review_files }}</strong><small>scanner or staff review</small></div>
+  <div class="metric"><span>Quarantined</span><strong>{{ summary.quarantined_files }}</strong><small>blocked from public download</small></div>
+  <div class="metric"><span>Rate blocks</span><strong>{{ summary.recent_blocks }}</strong><small>anti-leech events</small></div>
+</section>
+
+<section class="panel">
+  <h2>Filters</h2>
+  <form method="get" class="filter-grid">
+    {{ filter_form.as_p }}
+    <div class="filter-actions">
+      <button type="submit">Apply filters</button>
+      <a href="{% url 'moderation_dashboard' %}">Reset</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Reports</h2>
+  <form id="bulk-reports" method="post" action="{% url 'moderation_bulk_action' %}" class="bulk-form">
+    {% csrf_token %}
+    <input type="hidden" name="target" value="reports">
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <div class="bulk-controls">
+      <select name="action" required>
+        <option value="reviewing">Mark reviewing</option>
+        <option value="resolved">Resolve</option>
+        <option value="rejected">Reject</option>
+      </select>
+      <input name="reason" placeholder="Reason or note">
+      <button type="submit">Apply to selected</button>
+    </div>
+  </form>
+  <div class="table reports">
+    <div class="table-head">Select</div>
+    <div class="table-head">Category</div>
+    <div class="table-head">Status</div>
+    <div class="table-head">Message</div>
+    <div class="table-head">Moderation</div>
+    {% for report in reports %}
+      <div><input type="checkbox" name="ids" value="{{ report.pk }}" form="bulk-reports"></div>
+      <div>
+        <a href="{% url 'moderation_report_detail' report.pk %}">{{ report.get_category_display }}</a>
+        {% if report.assigned_to %}<p class="muted">Assigned to {{ report.assigned_to }}</p>{% endif %}
+        {% if report.duplicate_count %}<p class="muted">{{ report.duplicate_count }} related</p>{% endif %}
+      </div>
+      <div>{{ report.get_status_display }}</div>
+      <div>
+        {{ report.message|truncatechars:180 }}
+        {% if report.contact_email %}<p class="muted">{{ report.contact_email }}</p>{% endif %}
+      </div>
+      <div>
+        <form method="post" action="{% url 'moderate_report_update' report.pk %}" class="stack">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          {{ report.moderation_form.as_p }}
+          <button type="submit">Update report</button>
+        </form>
+      </div>
+    {% empty %}
+      <div class="full muted">No reports match these filters.</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Folders</h2>
+  <form id="bulk-folders" method="post" action="{% url 'moderation_bulk_action' %}" class="bulk-form">
+    {% csrf_token %}
+    <input type="hidden" name="target" value="folders">
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <div class="bulk-controls">
+      <select name="action" required>
+        <option value="hide">Hide</option>
+        <option value="restore">Restore</option>
+      </select>
+      <input name="reason" placeholder="Reason or note">
+      <button type="submit">Apply to selected</button>
+    </div>
+  </form>
+  <div class="table folders-table">
+    <div class="table-head">Select</div>
+    <div class="table-head">Path</div>
+    <div class="table-head">Owner</div>
+    <div class="table-head">State</div>
+    <div class="table-head">Actions</div>
+    {% for folder in recent_folders %}
+      <div>{% if not folder.is_root %}<input type="checkbox" name="ids" value="{{ folder.pk }}" form="bulk-folders">{% endif %}</div>
+      <div>{{ folder.logical_path }}</div>
+      <div>{{ folder.owner }}</div>
+      <div>{% if folder.is_deleted %}Hidden{% else %}Visible{% endif %}</div>
+      <div class="actions">
+        {% if not folder.is_root %}
+          <form method="post" action="{% url 'moderate_folder' folder.pk 'hide' %}">
+            {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Hide</button>
+          </form>
+          <form method="post" action="{% url 'moderate_folder' folder.pk 'restore' %}">
+            {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Restore</button>
+          </form>
+          <form method="post" action="{% url 'moderate_folder' folder.pk 'purge' %}">
+            {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="danger">Purge</button>
+          </form>
+        {% else %}
+          <span class="muted">Root folder</span>
+        {% endif %}
+      </div>
+    {% empty %}
+      <div class="full muted">No folders match these filters.</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Files</h2>
+  <form id="bulk-files" method="post" action="{% url 'moderation_bulk_action' %}" class="bulk-form">
+    {% csrf_token %}
+    <input type="hidden" name="target" value="files">
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <div class="bulk-controls">
+      <select name="action" required>
+        <option value="hide">Hide</option>
+        <option value="quarantine">Quarantine</option>
+        <option value="restore">Restore</option>
+        <option value="delete">Delete</option>
+        <option value="rescan">Rescan</option>
+      </select>
+      <input name="reason" placeholder="Reason or note">
+      <button type="submit">Apply to selected</button>
+    </div>
+  </form>
+  <div class="table moderation-files">
+    <div class="table-head">Select</div>
+    <div class="table-head">Name</div>
+    <div class="table-head">Owner</div>
+    <div class="table-head">Status</div>
+    <div class="table-head">Actions</div>
+    {% for file in recent_files %}
+      <div><input type="checkbox" name="ids" value="{{ file.pk }}" form="bulk-files"></div>
+      <div>{{ file.original_filename }}<p class="muted hash">{{ file.sha256 }}</p></div>
+      <div>{{ file.owner }}</div>
+      <div><span class="status {{ file.status }}">{{ file.get_status_display }}</span></div>
+      <div class="actions">
+        <form method="post" action="{% url 'moderate_file' file.pk 'hide' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Hide</button>
+        </form>
+        <form method="post" action="{% url 'moderate_file' file.pk 'quarantine' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Quarantine</button>
+        </form>
+        <form method="post" action="{% url 'moderate_file' file.pk 'restore' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Restore</button>
+        </form>
+        <form method="post" action="{% url 'moderate_file' file.pk 'rescan' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Rescan</button>
+        </form>
+        <form method="post" action="{% url 'moderate_file' file.pk 'delete' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="danger">Delete</button>
+        </form>
+      </div>
+    {% empty %}
+      <div class="full muted">No uploads match these filters.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

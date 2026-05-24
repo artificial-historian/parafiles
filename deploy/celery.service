@@ -1,0 +1,23 @@
+[Unit]
+Description=Parafiles Celery worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=parafiles
+Group=parafiles
+WorkingDirectory=/srv/parafiles/app
+EnvironmentFile=/srv/parafiles/.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0007
+ExecStart=/srv/parafiles/venv/bin/celery -A parafiles_project worker --loglevel=INFO
+Restart=on-failure
+RestartSec=5
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/srv/parafiles/private_uploads /srv/parafiles/upload_sessions
+
+[Install]
+WantedBy=multi-user.target

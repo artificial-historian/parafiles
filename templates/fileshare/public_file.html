@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ stored_file.display_title }} - Parafiles{% endblock %}
+{% block robots %}<meta name="robots" content="noindex,nofollow">{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>{{ stored_file.display_title }}</h1>
+  {% if stored_file.description %}
+    <p class="lead">{{ stored_file.description|linebreaksbr }}</p>
+  {% endif %}
+  <dl class="meta">
+    <div><dt>Filename</dt><dd>{{ stored_file.original_filename }}</dd></div>
+    {% if stored_file.version %}<div><dt>Version</dt><dd>{{ stored_file.version }}</dd></div>{% endif %}
+    {% if stored_file.game_version %}<div><dt>Game</dt><dd>{{ stored_file.game_version }}</dd></div>{% endif %}
+    <div><dt>Size</dt><dd>{{ stored_file.size|filesizeformat }}</dd></div>
+    <div><dt>Scan</dt><dd>{{ stored_file.get_status_display }}</dd></div>
+    <div><dt>Uploaded</dt><dd>{{ stored_file.uploaded_at }}</dd></div>
+    <div><dt>SHA-256</dt><dd class="hash">{{ stored_file.sha256 }}</dd></div>
+  </dl>
+  {% if stored_file.changelog %}
+    <section class="release-notes">
+      <h2>Changelog</h2>
+      <p>{{ stored_file.changelog|linebreaksbr }}</p>
+    </section>
+  {% endif %}
+  <form method="post" action="{% url 'prepare_download' share.slug %}">
+    {% csrf_token %}
+    <button type="submit" class="primary">Download</button>
+  </form>
+</section>
+
+<section class="narrow panel">
+  <h2>Report This File</h2>
+  <form method="post" action="{% url 'report_share' share.slug %}" class="stack">
+    {% csrf_token %}
+    {{ report_form.as_p }}
+    <button type="submit">Submit report</button>
+  </form>
+</section>
+{% endblock %}

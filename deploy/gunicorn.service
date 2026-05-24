@@ -1,0 +1,26 @@
+[Unit]
+Description=Parafiles Gunicorn application server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=parafiles
+Group=parafiles
+WorkingDirectory=/srv/parafiles/app
+EnvironmentFile=/srv/parafiles/.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+RuntimeDirectory=parafiles
+RuntimeDirectoryMode=0770
+UMask=0007
+ExecStart=/srv/parafiles/venv/bin/gunicorn parafiles_project.wsgi:application --workers 3 --bind unix:/run/parafiles/gunicorn.sock --timeout 120 --access-logfile - --error-logfile -
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/run/parafiles /srv/parafiles/app/staticfiles /srv/parafiles/private_uploads /srv/parafiles/upload_sessions
+
+[Install]
+WantedBy=multi-user.target

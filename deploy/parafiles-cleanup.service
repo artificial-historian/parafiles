@@ -1,0 +1,16 @@
+[Unit]
+Description=Parafiles expired upload cleanup
+
+[Service]
+Type=oneshot
+User=parafiles
+Group=parafiles
+WorkingDirectory=/srv/parafiles/app
+EnvironmentFile=/srv/parafiles/.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0007
+ExecStart=/srv/parafiles/venv/bin/python manage.py cleanup_uploads
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/srv/parafiles/private_uploads /srv/parafiles/upload_sessions

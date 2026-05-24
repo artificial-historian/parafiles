@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}User Moderation - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Users</h1>
+    <p class="muted">Account-level moderation for uploaders and staff.</p>
+  </div>
+  <div class="actions">
+    <a href="{% url 'moderation_invitations' %}">Invitations</a>
+    <a href="{% url 'moderation_operations_health' %}">Operations</a>
+    <a href="{% url 'moderation_action_log' %}">Audit log</a>
+    <a href="{% url 'moderation_dashboard' %}">Back to moderation</a>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Filters</h2>
+  <form method="get" class="filter-grid">
+    {{ filter_form.as_p }}
+    <div class="filter-actions">
+      <button type="submit">Apply filters</button>
+      <a href="{% url 'moderation_users' %}">Reset</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel">
+  <h2>Accounts</h2>
+  <div class="table moderation-users">
+    <div class="table-head">User</div>
+    <div class="table-head">State</div>
+    <div class="table-head">Usage</div>
+    <div class="table-head">Actions</div>
+    {% for account in users %}
+      <div>
+        <strong>{{ account.username }}</strong>
+        {% if account.email %}<p class="muted">{{ account.email }}</p>{% endif %}
+      </div>
+      <div>
+        {% if account.is_active %}<span class="status ok">Active</span>{% else %}<span class="status error">Suspended</span>{% endif %}
+        {% if account.is_uploader %}<span class="status available">Uploader</span>{% else %}<span class="status warn">Uploads off</span>{% endif %}
+        {% if account.is_staff %}<span class="status">Staff</span>{% endif %}
+      </div>
+      <div>
+        <p>{{ account.upload_count }} files</p>
+        <p>{{ account.storage_bytes|default:0|filesizeformat }}</p>
+        <p>{{ account.active_share_count }} active shares</p>
+      </div>
+      <div class="actions">
+        <a href="{% url 'moderation_user_quota' account.pk %}">Quota</a>
+        <form method="post" action="{% url 'moderate_user' account.pk 'disable_user_shares' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Disable shares</button>
+        </form>
+        <form method="post" action="{% url 'moderate_user' account.pk 'disable_uploads' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Disable uploads</button>
+        </form>
+        <form method="post" action="{% url 'moderate_user' account.pk 'restore_user' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button>Restore</button>
+        </form>
+        <form method="post" action="{% url 'moderate_user' account.pk 'suspend_user' %}">
+          {% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="danger">Suspend</button>
+        </form>
+      </div>
+    {% empty %}
+      <div class="full muted">No users match these filters.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

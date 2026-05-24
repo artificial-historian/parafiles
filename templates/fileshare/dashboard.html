@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Dashboard</h1>
+    <p class="muted">Current folder: {{ current_folder.logical_path }}</p>
+  </div>
+  <div class="quota">
+    <strong>{{ used_bytes|filesizeformat }}</strong>
+    <span>of {{ quota.storage_quota_bytes|filesizeformat }}</span>
+  </div>
+</section>
+
+<section class="grid-two">
+  <div class="panel">
+    <h2>Folders</h2>
+    <form method="post" action="{% url 'folder_create' %}" class="row-form">
+      {% csrf_token %}
+      <input type="hidden" name="parent_id" value="{{ current_folder.pk }}">
+      <input name="name" maxlength="180" placeholder="New folder" required>
+      <button type="submit">Create</button>
+    </form>
+    <div class="list">
+      {% if current_folder.parent_id %}
+        <a class="list-row" href="{% url 'dashboard' %}?folder={{ current_folder.parent_id }}">..</a>
+      {% endif %}
+      {% for folder in child_folders %}
+        <div class="list-row split">
+          <a href="{% url 'dashboard' %}?folder={{ folder.pk }}">{{ folder.name }}</a>
+          <span class="actions">
+            <details class="action-menu">
+              <summary>Manage</summary>
+              <form method="post" action="{% url 'folder_rename' folder.pk %}" class="stack">
+                {% csrf_token %}
+                <input name="name" value="{{ folder.name }}" maxlength="180" required>
+                <button type="submit">Rename</button>
+              </form>
+              <form method="post" action="{% url 'folder_move' folder.pk %}" class="stack">
+                {% csrf_token %}
+                <select name="target_folder_id" required>
+                  {% for target in move_targets %}
+                    <option value="{{ target.pk }}" {% if target.pk == current_folder.pk %}selected{% endif %}>{{ target.logical_path }}</option>
+                  {% endfor %}
+                </select>
+                <button type="submit">Move</button>
+              </form>
+            </details>
+            <form method="post" action="{% url 'share_toggle' 'folder' folder.pk %}">
+              {% csrf_token %}<input type="hidden" name="enabled" value="1"><button>Share</button>
+            </form>
+            <form method="post" action="{% url 'folder_delete' folder.pk %}">
+              {% csrf_token %}<button class="danger">Delete</button>
+            </form>
+          </span>
+        </div>
+      {% empty %}
+        <p class="muted">No subfolders.</p>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Upload</h2>
+    <form id="upload-form" class="stack">
+      {% csrf_token %}
+      <input type="hidden" name="folder_id" value="{{ current_folder.pk }}">
+      <input type="file" id="file-input" required>
+      <button type="submit">Upload file</button>
+      <p id="upload-status" class="muted"></p>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Files</h2>
+  <div class="table">
+    <div class="table-head">Name</div>
+    <div class="table-head">Size</div>
+    <div class="table-head">Status</div>
+    <div class="table-head">Actions</div>
+    {% for file in files %}
+      <div>{{ file.original_filename }}</div>
+      <div>{{ file.size|filesizeformat }}</div>
+      <div><span class="status {{ file.status }}">{{ file.get_status_display }}</span></div>
+      <div class="actions">
+        <details class="action-menu">
+          <summary>Manage</summary>
+          <form method="post" action="{% url 'file_rename' file.pk %}" class="stack">
+            {% csrf_token %}
+            <input name="filename" value="{{ file.original_filename }}" maxlength="255" required>
+            <button type="submit">Rename</button>
+          </form>
+          <form method="post" action="{% url 'file_move' file.pk %}" class="stack">
+            {% csrf_token %}
+            <select name="target_folder_id" required>
+              {% for target in move_targets %}
+                <option value="{{ target.pk }}" {% if target.pk == current_folder.pk %}selected{% endif %}>{{ target.logical_path }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit">Move</button>
+          </form>
+          <form method="post" action="{% url 'file_metadata' file.pk %}" class="stack">
+            {% csrf_token %}
+            <input name="title" value="{{ file.title }}" maxlength="180" placeholder="Public title">
+            <input name="version" value="{{ file.version }}" maxlength="80" placeholder="Version">
+            <input name="game_version" value="{{ file.game_version }}" maxlength="80" placeholder="Paralives version">
+            <textarea name="description" rows="4" placeholder="Description">{{ file.description }}</textarea>
+            <textarea name="changelog" rows="4" placeholder="Changelog">{{ file.changelog }}</textarea>
+            <button type="submit">Save metadata</button>
+          </form>
+        </details>
+        <form method="post" action="{% url 'share_toggle' 'file' file.pk %}">
+          {% csrf_token %}<input type="hidden" name="enabled" value="1"><button>Share</button>
+        </form>
+        <form method="post" action="{% url 'file_delete' file.pk %}">
+          {% csrf_token %}<button class="danger">Delete</button>
+        </form>
+      </div>
+    {% empty %}
+      <div class="full muted">No files in this folder.</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Active Shares</h2>
+  <div class="list">
+    {% for share in shares %}
+      <div class="list-row split">
+        <div>
+          <strong>{{ share.get_target_type_display }}</strong>
+          {% if share.target_type == "file" %}
+            <a href="{% url 'public_file' share.slug %}">{{ request.scheme }}://{{ request.get_host }}{% url 'public_file' share.slug %}</a>
+          {% else %}
+            <a href="{% url 'public_folder' share.slug %}">{{ request.scheme }}://{{ request.get_host }}{% url 'public_folder' share.slug %}</a>
+          {% endif %}
+        </div>
+        <span class="actions">
+          <form method="post" action="{% url 'share_regenerate' share.pk %}">
+            {% csrf_token %}<button>Regenerate</button>
+          </form>
+          <form method="post" action="{% url 'share_toggle' share.target_type share.target.pk %}">
+            {% csrf_token %}<input type="hidden" name="enabled" value="0"><button class="danger">Disable</button>
+          </form>
+        </span>
+      </div>
+    {% empty %}
+      <p class="muted">No active shares.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<script>
+const uploadForm = document.getElementById("upload-form");
+const uploadStatus = document.getElementById("upload-status");
+uploadForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const file = document.getElementById("file-input").files[0];
+  if (!file) return;
+  uploadStatus.textContent = "Starting upload...";
+  const csrf = uploadForm.querySelector("input[name=csrfmiddlewaretoken]").value;
+  const folderId = uploadForm.querySelector("input[name=folder_id]").value;
+  const uploadKey = `parafiles-upload:${folderId}:${file.name}:${file.size}:${file.lastModified}`;
+  let startedJson = null;
+  const savedUpload = localStorage.getItem(uploadKey);
+  if (savedUpload) {
+    try {
+      const candidate = JSON.parse(savedUpload);
+      const status = await fetch(candidate.status_url, { headers: { "Accept": "application/json", "X-Upload-Token": candidate.token } });
+      if (status.ok) {
+        const statusJson = await status.json();
+        if (statusJson.status === "uploading" || statusJson.status === "init") {
+          startedJson = { ...candidate, bytes_received: statusJson.bytes_received };
+          uploadStatus.textContent = "Resuming upload...";
+        } else {
+          localStorage.removeItem(uploadKey);
+        }
+      }
+    } catch (error) {
+      localStorage.removeItem(uploadKey);
+    }
+  }
+  if (!startedJson) {
+    const start = new FormData();
+    start.append("csrfmiddlewaretoken", csrf);
+    start.append("folder_id", folderId);
+    start.append("filename", file.name);
+    start.append("size", file.size);
+    start.append("content_type", file.type || "application/octet-stream");
+    const started = await fetch("{% url 'upload_start' %}", { method: "POST", body: start, headers: { "Accept": "application/json" } });
+    startedJson = await started.json();
+    if (!started.ok) {
+      uploadStatus.textContent = "Upload rejected.";
+      return;
+    }
+    localStorage.setItem(uploadKey, JSON.stringify(startedJson));
+  }
+  const chunkSize = startedJson.chunk_size || (8 * 1024 * 1024);
+  let offset = startedJson.bytes_received || 0;
+  while (offset < file.size) {
+    uploadStatus.textContent = `Uploading ${Math.floor((offset / file.size) * 100)}%...`;
+    const chunk = new FormData();
+    chunk.append("csrfmiddlewaretoken", csrf);
+    chunk.append("token", startedJson.token);
+    chunk.append("offset", offset);
+    chunk.append("chunk", file.slice(offset, Math.min(offset + chunkSize, file.size)));
+    const uploaded = await fetch(startedJson.chunk_url, { method: "POST", body: chunk, headers: { "Accept": "application/json" } });
+    const uploadedJson = await uploaded.json();
+    if (!uploaded.ok) {
+      uploadStatus.textContent = uploaded.status === 409 ? "Upload offset mismatch. Please retry." : "Upload failed.";
+      return;
+    }
+    offset = uploadedJson.bytes_received;
+  }
+  uploadStatus.textContent = "Finalizing and scanning...";
+  const finalize = new FormData();
+  finalize.append("csrfmiddlewaretoken", csrf);
+  finalize.append("token", startedJson.token);
+  const finalized = await fetch(startedJson.finalize_url, { method: "POST", body: finalize, headers: { "Accept": "application/json" } });
+  const finalizedJson = await finalized.json();
+  if (finalized.ok) {
+    uploadStatus.textContent = "Upload finished with status: " + finalizedJson.status;
+    localStorage.removeItem(uploadKey);
+    window.location = finalizedJson.dashboard_url;
+  } else {
+    uploadStatus.textContent = "Finalize failed.";
+  }
+});
+</script>
+{% endblock %}

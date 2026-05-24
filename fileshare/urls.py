@@ -1,0 +1,103 @@
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    path("", views.home, name="home"),
+    path("register/<str:token>/", views.register_invite, name="register_invite"),
+    path("staff/2fa/setup/", views.staff_2fa_setup, name="staff_2fa_setup"),
+    path("staff/2fa/verify/", views.staff_2fa_verify, name="staff_2fa_verify"),
+    path("dashboard/", views.dashboard, name="dashboard"),
+    path("dashboard/account/", views.account_settings, name="account_settings"),
+    path("dashboard/folders/create/", views.folder_create, name="folder_create"),
+    path("dashboard/folders/<int:folder_id>/rename/", views.folder_rename, name="folder_rename"),
+    path("dashboard/folders/<int:folder_id>/move/", views.folder_move, name="folder_move"),
+    path("dashboard/folders/<int:folder_id>/delete/", views.folder_delete, name="folder_delete"),
+    path("dashboard/files/<int:file_id>/rename/", views.file_rename, name="file_rename"),
+    path("dashboard/files/<int:file_id>/metadata/", views.file_metadata, name="file_metadata"),
+    path("dashboard/files/<int:file_id>/move/", views.file_move, name="file_move"),
+    path("dashboard/files/<int:file_id>/delete/", views.file_delete, name="file_delete"),
+    path("dashboard/uploads/start/", views.upload_start, name="upload_start"),
+    path("dashboard/uploads/<uuid:upload_id>/chunk/", views.upload_chunk, name="upload_chunk"),
+    path("dashboard/uploads/<uuid:upload_id>/finalize/", views.upload_finalize, name="upload_finalize"),
+    path(
+        "dashboard/share/<str:target_type>/<int:target_id>/toggle/",
+        views.share_toggle,
+        name="share_toggle",
+    ),
+    path("dashboard/share/<int:share_id>/regenerate/", views.share_regenerate, name="share_regenerate"),
+    path("dashboard/share/<int:share_id>/update/", views.share_update, name="share_update"),
+    path("dashboard/uploads/<uuid:upload_id>/status/", views.upload_status, name="upload_status"),
+    path("file/<str:slug>/", views.public_file, name="public_file"),
+    path("folder/<str:slug>/", views.public_folder, name="public_folder"),
+    path("report/<str:slug>/", views.report_share, name="report_share"),
+    path("report/thanks/", views.report_thanks, name="report_thanks"),
+    path("download/prepare/<str:slug>/", views.prepare_download, name="prepare_download"),
+    path(
+        "download/prepare/<str:slug>/<int:file_id>/",
+        views.prepare_download,
+        name="prepare_download_file",
+    ),
+    path("download/<path:token>/", views.download_file, name="download_file"),
+    path("moderation/", views.moderation_dashboard, name="moderation_dashboard"),
+    path("moderation/actions/", views.moderation_action_log, name="moderation_action_log"),
+    path(
+        "moderation/rate-limits/",
+        views.moderation_rate_limit_events,
+        name="moderation_rate_limit_events",
+    ),
+    path(
+        "moderation/operations/",
+        views.moderation_operations_health,
+        name="moderation_operations_health",
+    ),
+    path("moderation/invitations/", views.moderation_invitations, name="moderation_invitations"),
+    path(
+        "moderation/invitations/<int:invitation_id>/resend/",
+        views.moderation_invitation_resend,
+        name="moderation_invitation_resend",
+    ),
+    path("moderation/users/", views.moderation_users, name="moderation_users"),
+    path(
+        "moderation/users/<int:user_id>/quota/",
+        views.moderation_user_quota,
+        name="moderation_user_quota",
+    ),
+    path(
+        "moderation/users/<int:user_id>/<str:action>/",
+        views.moderate_user,
+        name="moderate_user",
+    ),
+    path("moderation/bulk/", views.moderation_bulk_action, name="moderation_bulk_action"),
+    path(
+        "moderation/files/<int:file_id>/<str:action>/",
+        views.moderate_file,
+        name="moderate_file",
+    ),
+    path(
+        "moderation/folders/<int:folder_id>/<str:action>/",
+        views.moderate_folder,
+        name="moderate_folder",
+    ),
+    path(
+        "moderation/shares/<int:share_id>/<str:action>/",
+        views.moderate_share,
+        name="moderate_share",
+    ),
+    path(
+        "moderation/reports/<int:report_id>/update/",
+        views.moderate_report_update,
+        name="moderate_report_update",
+    ),
+    path(
+        "moderation/reports/<int:report_id>/",
+        views.moderation_report_detail,
+        name="moderation_report_detail",
+    ),
+    path(
+        "moderation/reports/<int:report_id>/<str:status>/",
+        views.moderate_report,
+        name="moderate_report",
+    ),
+    path("health/", views.health_check, name="health_check"),
+]

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Set Up 2FA - Parafiles{% endblock %}
+{% block content %}
+<section class="narrow panel">
+  <h1>Set Up 2FA</h1>
+  <p class="muted">Staff accounts must use an authenticator app before accessing moderation or admin tools.</p>
+  <dl class="meta">
+    <div><dt>Secret</dt><dd class="hash">{{ secret }}</dd></div>
+    <div><dt>URI</dt><dd class="hash">{{ device.config_url }}</dd></div>
+  </dl>
+  <form method="post" class="stack">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.GET.next }}">
+    {{ form.as_p }}
+    <button type="submit">Enable 2FA</button>
+  </form>
+</section>
+{% endblock %}

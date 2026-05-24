@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Quota - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Quota</h1>
+    <p class="muted">{{ account.username }}</p>
+  </div>
+  <div class="actions">
+    <a href="{% url 'moderation_users' %}">Back to users</a>
+    <a href="{% url 'moderation_action_log' %}?q={{ account.username }}">Audit log</a>
+  </div>
+</section>
+
+<section class="metrics">
+  <div class="metric"><span>Storage used</span><strong>{{ used_bytes|filesizeformat }}</strong><small>limit {{ quota.storage_quota_bytes|filesizeformat }}</small></div>
+  <div class="metric"><span>Files</span><strong>{{ file_count }}</strong><small>limit {{ quota.max_file_count }}</small></div>
+  <div class="metric"><span>Folders</span><strong>{{ folder_count }}</strong><small>depth limit {{ quota.folder_depth_limit }}</small></div>
+  <div class="metric"><span>Max file size</span><strong>{{ quota.max_file_size_bytes|filesizeformat }}</strong><small>per upload</small></div>
+</section>
+
+<section class="grid-two">
+  <div class="panel">
+    <h2>Override</h2>
+    <form method="post" class="stack">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Save quota</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Current Override</h2>
+    {% if quota_override %}
+      <dl class="meta">
+        <div><dt>Storage</dt><dd>{{ quota_override.storage_quota_bytes|filesizeformat|default:"Default" }}</dd></div>
+        <div><dt>File size</dt><dd>{{ quota_override.max_file_size_bytes|filesizeformat|default:"Default" }}</dd></div>
+        <div><dt>File count</dt><dd>{{ quota_override.max_file_count|default:"Default" }}</dd></div>
+        <div><dt>Depth</dt><dd>{{ quota_override.folder_depth_limit|default:"Default" }}</dd></div>
+      </dl>
+    {% else %}
+      <p class="muted">No quota override. This account uses configured defaults and any legacy user-level values.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
