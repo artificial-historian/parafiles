@@ -952,6 +952,47 @@ class ParafilesFlowTests(TestCase):
         self.assertEqual(user.email, "new@example.test")
         self.assertFalse(user.has_verified_email)
 
+    def test_share_lists_hide_shares_for_deleted_targets(self):
+        user = self.make_uploader()
+        root = Folder.get_root(user)
+        live_file = self.make_available_file(user, root, name="visible-share.zip")
+        deleted_file = self.make_available_file(user, root, name="stale-deleted-share.zip")
+        deleted_file.status = StoredFile.Status.DELETED
+        deleted_file.deleted_at = timezone.now()
+        deleted_file.save(update_fields=["status", "deleted_at", "updated_at"])
+        deleted_folder = Folder.objects.create(owner=user, parent=root, name="stale-folder-share")
+        deleted_folder.soft_delete()
+        PublicShare.objects.create(
+            owner=user,
+            target_type=PublicShare.TargetType.FILE,
+            stored_file=live_file,
+            is_enabled=False,
+        )
+        PublicShare.objects.create(
+            owner=user,
+            target_type=PublicShare.TargetType.FILE,
+            stored_file=deleted_file,
+        )
+        PublicShare.objects.create(
+            owner=user,
+            target_type=PublicShare.TargetType.FOLDER,
+            folder=deleted_folder,
+        )
+        self.client.force_login(user)
+
+        account = self.client.get(reverse("account_settings"))
+        files = self.client.get(reverse("files_and_shares"))
+        dashboard = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(account.status_code, 200)
+        self.assertContains(account, "visible-share.zip")
+        self.assertNotContains(account, "stale-deleted-share.zip")
+        self.assertNotContains(account, "stale-folder-share")
+        self.assertNotContains(files, "stale-deleted-share.zip")
+        self.assertNotContains(files, "stale-folder-share")
+        self.assertNotContains(dashboard, "stale-deleted-share.zip")
+        self.assertNotContains(dashboard, "stale-folder-share")
+
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_account_settings_keeps_verified_email_until_new_email_verified(self):
         user = self.make_uploader()

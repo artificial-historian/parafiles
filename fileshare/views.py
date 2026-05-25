@@ -278,7 +278,11 @@ def dashboard(request: HttpRequest) -> HttpResponse:
         .exclude(status=StoredFile.Status.DELETED)
         .prefetch_related("public_shares")
     )
-    shares = PublicShare.objects.filter(owner=request.user, is_enabled=True)
+    shares = undeleted_target_shares(
+        PublicShare.objects.filter(owner=request.user, is_enabled=True)
+        .select_related("stored_file__folder", "folder")
+        .order_by("-created_at")
+    )
     quota = effective_quota(request.user)
     context = {
         "root": root,
@@ -302,6 +306,23 @@ def folder_breadcrumbs(folder: Folder) -> list[Folder]:
         breadcrumbs.append(current)
         current = current.parent
     return list(reversed(breadcrumbs))
+
+
+def share_has_undeleted_target(share: PublicShare) -> bool:
+    if share.stored_file_id:
+        stored_file = share.stored_file
+        return (
+            stored_file.status != StoredFile.Status.DELETED
+            and stored_file.deleted_at is None
+            and stored_file.folder.is_publicly_visible
+        )
+    if share.folder_id:
+        return share.folder.is_publicly_visible
+    return False
+
+
+def undeleted_target_shares(shares) -> list[PublicShare]:
+    return [share for share in shares if share_has_undeleted_target(share)]
 
 
 def public_share_url(request: HttpRequest, share: PublicShare) -> str:
@@ -355,9 +376,9 @@ def files_and_shares(request: HttpRequest) -> HttpResponse:
         .exclude(status=StoredFile.Status.DELETED)
         .order_by("original_filename", "id")
     )
-    active_shares = list(
+    active_shares = undeleted_target_shares(
         PublicShare.objects.filter(owner=request.user, is_enabled=True)
-        .select_related("stored_file", "folder")
+        .select_related("stored_file__folder", "folder")
         .order_by("-created_at")
     )
     file_shares = {share.stored_file_id: share for share in active_shares if share.stored_file_id}
@@ -488,9 +509,9 @@ def account_settings(request: HttpRequest) -> HttpResponse:
         )
 
     quota = effective_quota(request.user)
-    shares = (
+    shares = undeleted_target_shares(
         PublicShare.objects.filter(owner=request.user)
-        .select_related("stored_file", "folder")
+        .select_related("stored_file__folder", "folder")
         .order_by("-created_at")
     )
     recent_downloads = (
