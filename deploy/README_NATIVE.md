@@ -24,7 +24,7 @@ Required services:
 - Nginx with HTTPS configured
 - Python 3.12 or newer with `venv`
 - ClamAV with an up-to-date signature database
-- SMTP credentials for invitation email delivery
+- SMTP credentials for invitation, verification, and recovery email delivery
 
 Debian/Ubuntu package baseline:
 
@@ -99,11 +99,13 @@ Set at minimum:
 - `DJANGO_CSRF_TRUSTED_ORIGINS=https://parafiles.net`
 - `DATABASE_URL` for the existing PostgreSQL instance
 - `REDIS_URL` for the Redis instance
-- SMTP settings and `DEFAULT_FROM_EMAIL`
+- SMTP settings, `DEFAULT_FROM_EMAIL`, and the email verification timeout
 - `PARAFILES_STORAGE_ROOT=/srv/data/allfiles/parafiles/private_uploads`
 - `PARAFILES_UPLOAD_SESSION_ROOT=/srv/data/allfiles/parafiles/upload_sessions`
 - `PARAFILES_SERVE_PRIVATE_DOWNLOADS=false`
 - `PARAFILES_INTERNAL_DOWNLOAD_PREFIX=/protected-files/`
+- `PARAFILES_SIGNATURE_PRIVATE_KEY` to a base64 Ed25519 private key
+- `PARAFILES_SIGNATURE_PUBLIC_KEY` to the matching base64 Ed25519 public key
 - `PARAFILES_ADMIN_2FA_REQUIRED=true`
 
 Keep `PARAFILES_ALLOW_SCAN_BYPASS=false` for native deployment. Uploads should remain unavailable until local scanning completes successfully.
@@ -114,9 +116,31 @@ Install the helper command for Django management tasks:
 sudo install -o root -g root -m 0755 /srv/parafiles/app/deploy/run-manage.sh /usr/local/bin/parafiles-manage
 ```
 
+## File Signing
+
+Parafiles creates a detached `.sig` JSON document for every finalized upload. The signature system uses Ed25519 and signs a canonical payload containing the file name, byte size, SHA-256 digest, key id, algorithm, purpose, and version. Downloaders can verify the `.sig` by checking the Ed25519 signature with the public key and comparing the signed SHA-256 digest with the downloaded file.
+
+Generate the signing keypair on the server and copy both values into `/srv/parafiles/.env`:
+
+```sh
+python - <<'PY'
+import base64
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat, PublicFormat
+
+key = Ed25519PrivateKey.generate()
+private_key = key.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
+public_key = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+print("PARAFILES_SIGNATURE_PRIVATE_KEY=" + base64.b64encode(private_key).decode("ascii"))
+print("PARAFILES_SIGNATURE_PUBLIC_KEY=" + base64.b64encode(public_key).decode("ascii"))
+PY
+```
+
+Keep `PARAFILES_SIGNATURE_PRIVATE_KEY` secret and backed up. If it is lost, future uploads must use a new key and downloaders need the new public key. `PARAFILES_SIGNATURE_PUBLIC_KEY` is safe to publish and is included in generated `.sig` files for convenience; `check --deploy` verifies that it matches the private key.
+
 ## ClamAV
 
-Make sure signatures are present before disabling scan bypass:
+Make sure virus signatures are present before disabling scan bypass:
 
 ```sh
 sudo freshclam
@@ -252,6 +276,6 @@ The database stores logical folder/file metadata, public share slugs, scan state
 - `502 Bad Gateway`: check `systemctl status parafiles-gunicorn`, socket permissions, and that `www-data` is in the `parafiles` group.
 - `403` or `404` for downloads after token handoff: verify `PARAFILES_INTERNAL_DOWNLOAD_PREFIX` matches the Nginx `/protected-files/` location and that Nginx can read `/srv/data/allfiles/parafiles/private_uploads`.
 - Uploads remain unavailable: check `systemctl status parafiles-celery`, ClamAV availability, and scan result records in moderation.
-- Invite email does not send: verify SMTP env settings and inspect Gunicorn logs.
+- Invite, verification, or recovery email does not send: verify SMTP env settings and inspect Gunicorn logs.
 - `check --deploy` fails on secret key: replace every placeholder in `/srv/parafiles/.env`.
 - `check_operations_health` warns about direct private serving: set `PARAFILES_SERVE_PRIVATE_DOWNLOADS=false` and route through Nginx.

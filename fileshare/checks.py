@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.core.checks import Error, Warning, register
 
 
@@ -88,6 +89,31 @@ def parafiles_deploy_checks(app_configs, **kwargs):
                 id="parafiles.E007",
             )
         )
+    if not settings.DEBUG and not settings.PARAFILES_SIGNATURE_PRIVATE_KEY:
+        issues.append(
+            Error(
+                "PARAFILES_SIGNATURE_PRIVATE_KEY is required for file signature generation.",
+                id="parafiles.E008",
+            )
+        )
+    if not settings.DEBUG and not settings.PARAFILES_SIGNATURE_PUBLIC_KEY:
+        issues.append(
+            Error(
+                "PARAFILES_SIGNATURE_PUBLIC_KEY is required so generated signatures can be published and verified.",
+                id="parafiles.E010",
+            )
+        )
+    if (
+        not settings.DEBUG
+        and settings.PARAFILES_SIGNATURE_PRIVATE_KEY
+        and settings.PARAFILES_SIGNATURE_PUBLIC_KEY
+    ):
+        try:
+            from fileshare.services.storage import private_signature_key, public_signature_key_bytes
+
+            public_signature_key_bytes(private_signature_key())
+        except ImproperlyConfigured as exc:
+            issues.append(Error(str(exc), id="parafiles.E009"))
     if not settings.DEBUG and not settings.CSRF_TRUSTED_ORIGINS:
         issues.append(
             Warning(

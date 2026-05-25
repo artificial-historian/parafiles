@@ -69,6 +69,20 @@ button:disabled {
   opacity: 0.6;
 }
 
+.ajax-busy {
+  cursor: progress;
+}
+
+.ajax-busy a,
+.ajax-busy button,
+.is-submitting {
+  cursor: progress;
+}
+
+main.page:focus {
+  outline: none;
+}
+
 button.danger {
   border-color: var(--danger);
   background: var(--danger);
@@ -256,6 +270,20 @@ textarea {
   gap: 0.75rem;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.report-link-row {
+  margin-top: 1rem;
+}
+
+.report-panel {
+  display: none;
+}
+
+.report-panel:target,
+.report-panel.is-revealed,
+.report-panel.has-errors {
+  display: block;
 }
 
 .quick-share-shell {

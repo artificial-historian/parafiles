@@ -10,6 +10,7 @@ from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
+from django.db.models.functions import Lower
 from django.utils import timezone
 
 
@@ -26,11 +27,32 @@ def invitation_expiry():
 
 
 class User(AbstractUser):
+    verified_email = models.EmailField(blank=True)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
+    pending_email = models.EmailField(blank=True)
     is_uploader = models.BooleanField(default=False)
     storage_quota_bytes = models.BigIntegerField(null=True, blank=True)
     max_file_size_bytes = models.BigIntegerField(null=True, blank=True)
     max_file_count = models.PositiveIntegerField(null=True, blank=True)
     folder_depth_limit = models.PositiveIntegerField(null=True, blank=True)
+
+    class Meta(AbstractUser.Meta):
+        constraints = [
+            models.UniqueConstraint(
+                Lower("verified_email"),
+                condition=~Q(verified_email=""),
+                name="unique_verified_email_ci",
+            )
+        ]
+
+    @property
+    def has_verified_email(self) -> bool:
+        return bool(
+            self.email
+            and self.verified_email
+            and self.email.strip().lower() == self.verified_email.strip().lower()
+            and self.email_verified_at
+        )
 
     @property
     def can_upload(self) -> bool:

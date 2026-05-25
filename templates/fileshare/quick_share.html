@@ -51,6 +51,7 @@
 </dialog>
 
 <script>
+(() => {
 const quickShareUrls = {
   uploadStart: "{% url 'upload_start' %}",
   folderCreate: "{% url 'folder_create' %}",
@@ -60,7 +61,9 @@ const quickShareUrls = {
   fileFolder: "{% url 'quick_share_file_folder' 0 %}",
 };
 
-const csrfToken = document.querySelector("#quick-share-csrf input[name=csrfmiddlewaretoken]").value;
+const csrfInput = document.querySelector("#quick-share-csrf input[name=csrfmiddlewaretoken]");
+if (!csrfInput) return;
+const csrfToken = csrfInput.value;
 const rootFolder = { id: {{ root_folder.pk }}, path: "{{ root_folder.logical_path|escapejs }}" };
 const dropZone = document.getElementById("drop-zone");
 const fileInput = document.getElementById("file-input");
@@ -523,5 +526,6 @@ fileInput.addEventListener("change", () => {
   enqueueFiles(fileInput.files);
   fileInput.value = "";
 });
+})();
 </script>
 {% endblock %}

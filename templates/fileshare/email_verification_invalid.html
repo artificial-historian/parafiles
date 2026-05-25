@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Email verification - Parafiles{% endblock %}
+{% block robots %}<meta name="robots" content="noindex,nofollow">{% endblock %}
+{% block content %}
+<section class="narrow">
+  <h1>Email Verification</h1>
+  <p class="message error">This verification link is invalid or expired.</p>
+  {% if request.user.is_authenticated %}
+    <form method="post" action="{% url 'resend_email_verification' %}">
+      {% csrf_token %}
+      <button type="submit">Send a new verification email</button>
+    </form>
+  {% else %}
+    <a href="{% url 'login' %}">Sign in</a>
+  {% endif %}
+</section>
+{% endblock %}

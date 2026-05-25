@@ -5,6 +5,12 @@ from . import views
 urlpatterns = [
     path("", views.home, name="home"),
     path("register/<str:token>/", views.register_invite, name="register_invite"),
+    path("accounts/email/verify/<str:token>/", views.verify_email, name="verify_email"),
+    path(
+        "dashboard/account/email/resend/",
+        views.resend_email_verification,
+        name="resend_email_verification",
+    ),
     path("staff/2fa/setup/", views.staff_2fa_setup, name="staff_2fa_setup"),
     path("staff/2fa/verify/", views.staff_2fa_verify, name="staff_2fa_verify"),
     path("dashboard/", views.dashboard, name="dashboard"),

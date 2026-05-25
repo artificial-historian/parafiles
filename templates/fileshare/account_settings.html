@@ -34,11 +34,29 @@
 <section class="grid-two">
   <div class="panel">
     <h2>Profile</h2>
+    <p>
+      {% if has_verified_email %}
+        <span class="status ok">Email verified</span>
+      {% elif request.user.pending_email %}
+        <span class="status warn">Verification pending</span>
+        <span class="muted">{{ request.user.pending_email }}</span>
+      {% elif request.user.email %}
+        <span class="status warn">Email unverified</span>
+      {% else %}
+        <span class="status error">No recovery email</span>
+      {% endif %}
+    </p>
     <form method="post" class="stack">
       {% csrf_token %}
       {{ form.as_p }}
       <button type="submit">Save</button>
     </form>
+    {% if request.user.pending_email or request.user.email and not has_verified_email %}
+      <form method="post" action="{% url 'resend_email_verification' %}">
+        {% csrf_token %}
+        <button type="submit">Resend verification email</button>
+      </form>
+    {% endif %}
   </div>
 
   <div class="panel">

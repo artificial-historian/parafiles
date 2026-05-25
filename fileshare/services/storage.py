@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
+import json
 import os
 import shutil
 import uuid
 from pathlib import Path
 
 from django.conf import settings
-from django.core.exceptions import SuspiciousOperation, ValidationError
+from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation, ValidationError
 from django.utils import timezone
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from fileshare.models import Folder, PublicShare, StoredFile, UploadSession, User
 from fileshare.services.security import sanitize_filename
@@ -43,6 +48,123 @@ def storage_key_for_file(user: User, filename: str) -> str:
 
 def private_path(storage_key: str) -> Path:
     return safe_join(settings.PARAFILES_STORAGE_ROOT, storage_key)
+
+
+def signature_storage_key(stored_file: StoredFile) -> str:
+    return f"{stored_file.storage_key}.sig"
+
+
+def decode_signature_key(value: str, setting_name: str) -> bytes:
+    try:
+        key = base64.b64decode(value.strip(), validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ImproperlyConfigured(f"{setting_name} must be base64 encoded.") from exc
+    if len(key) != 32:
+        raise ImproperlyConfigured(f"{setting_name} must decode to exactly 32 bytes.")
+    return key
+
+
+def private_signature_key_bytes() -> bytes:
+    configured_key = getattr(settings, "PARAFILES_SIGNATURE_PRIVATE_KEY", "")
+    if configured_key:
+        return decode_signature_key(configured_key, "PARAFILES_SIGNATURE_PRIVATE_KEY")
+    if settings.DEBUG:
+        return hashlib.sha256(
+            f"{settings.SECRET_KEY}:parafiles-dev-ed25519-signature-key".encode("utf-8")
+        ).digest()
+    raise ImproperlyConfigured("PARAFILES_SIGNATURE_PRIVATE_KEY is required.")
+
+
+def private_signature_key() -> Ed25519PrivateKey:
+    return Ed25519PrivateKey.from_private_bytes(private_signature_key_bytes())
+
+
+def public_signature_key_bytes(private_key: Ed25519PrivateKey) -> bytes:
+    public_key = private_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    configured_public_key = getattr(settings, "PARAFILES_SIGNATURE_PUBLIC_KEY", "")
+    if configured_public_key:
+        expected_public_key = decode_signature_key(
+            configured_public_key, "PARAFILES_SIGNATURE_PUBLIC_KEY"
+        )
+        if expected_public_key != public_key:
+            raise ImproperlyConfigured(
+                "PARAFILES_SIGNATURE_PUBLIC_KEY does not match PARAFILES_SIGNATURE_PRIVATE_KEY."
+            )
+    return public_key
+
+
+def signature_key_id(public_key: bytes) -> str:
+    return hashlib.sha256(public_key).hexdigest()[:16]
+
+
+def canonical_signature_payload(payload: dict) -> bytes:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def file_digest_for_signature(stored_file: StoredFile) -> str:
+    digest = sha256_file(private_path(stored_file.storage_key))
+    if digest != stored_file.sha256:
+        raise ValidationError("Stored file checksum mismatch; refusing to sign.")
+    return digest
+
+
+def signature_document(stored_file: StoredFile) -> dict:
+    private_key = private_signature_key()
+    public_key = public_signature_key_bytes(private_key)
+    signed_payload = {
+        "algorithm": "Ed25519",
+        "file": {
+            "name": stored_file.original_filename,
+            "sha256": file_digest_for_signature(stored_file),
+            "size": stored_file.size,
+        },
+        "key_id": signature_key_id(public_key),
+        "purpose": "parafiles-file-signature",
+        "version": 1,
+    }
+    signature = private_key.sign(canonical_signature_payload(signed_payload))
+    return {
+        "public_key": base64.b64encode(public_key).decode("ascii"),
+        "signature": base64.b64encode(signature).decode("ascii"),
+        "signed": signed_payload,
+    }
+
+
+def signature_payload(stored_file: StoredFile) -> bytes:
+    return (
+        json.dumps(signature_document(stored_file), indent=2, sort_keys=True)
+        .encode("utf-8")
+        + b"\n"
+    )
+
+
+def write_signature_file(stored_file: StoredFile, *, overwrite: bool = True) -> Path:
+    path = private_path(signature_storage_key(stored_file))
+    if path.exists() and not overwrite:
+        try:
+            if path.stat().st_size > 0:
+                return path
+        except OSError:
+            pass
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    payload = signature_payload(stored_file)
+    temp_path.write_bytes(payload)
+    if os.name != "nt":
+        os.chmod(temp_path, 0o640)
+    try:
+        os.replace(temp_path, path)
+    except OSError:
+        path.write_bytes(payload)
+        try:
+            temp_path.unlink()
+        except OSError:
+            pass
+    return path
+
+
+def ensure_signature_file(stored_file: StoredFile) -> Path:
+    return write_signature_file(stored_file, overwrite=False)
 
 
 def write_chunk(session: UploadSession, chunk, expected_offset: int | None = None) -> None:
@@ -126,6 +248,7 @@ def finalize_session(session: UploadSession) -> StoredFile:
     session.status = UploadSession.Status.FINALIZED
     session.finalized_file = stored_file
     session.save(update_fields=["status", "finalized_file"])
+    write_signature_file(stored_file)
     return stored_file
 
 
@@ -144,6 +267,13 @@ def purge_file_bytes(stored_file: StoredFile) -> None:
         except OSError:
             pass
     except FileNotFoundError:
+        pass
+    signature_path = private_path(signature_storage_key(stored_file))
+    try:
+        signature_path.unlink()
+    except FileNotFoundError:
+        pass
+    except OSError:
         pass
     stored_file.status = StoredFile.Status.DELETED
     stored_file.deleted_at = timezone.now()

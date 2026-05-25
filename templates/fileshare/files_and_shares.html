@@ -213,38 +213,4 @@
   </div>
 </section>
 
-<script>
-async function copyShareText(text) {
-  if (navigator.clipboard && window.isSecureContext) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const textArea = document.createElement("textarea");
-  textArea.value = text;
-  textArea.style.position = "fixed";
-  textArea.style.left = "-9999px";
-  document.body.appendChild(textArea);
-  textArea.focus();
-  textArea.select();
-  document.execCommand("copy");
-  textArea.remove();
-}
-
-document.addEventListener("click", async (event) => {
-  const copyButton = event.target.closest("[data-copy]");
-  if (copyButton) {
-    await copyShareText(copyButton.dataset.copy);
-    copyButton.textContent = "Copied";
-    setTimeout(() => { copyButton.textContent = "⧉"; }, 1200);
-  }
-});
-
-for (const form of document.querySelectorAll("form[data-confirm]")) {
-  form.addEventListener("submit", (event) => {
-    if (!window.confirm(form.dataset.confirm)) {
-      event.preventDefault();
-    }
-  });
-}
-</script>
 {% endblock %}

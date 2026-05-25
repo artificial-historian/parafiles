@@ -25,18 +25,21 @@
     </section>
   {% endif %}
   <div class="download-actions">
-    <form method="post" action="{{ download_url }}">
+    <form method="post" action="{{ download_url }}" data-ajax="off">
       {% csrf_token %}
       <button type="submit" class="primary">Download</button>
     </form>
-    <form method="post" action="{{ signature_download_url }}">
+    <form method="post" action="{{ signature_download_url }}" data-ajax="off">
       {% csrf_token %}
       <button type="submit" class="primary success">Download .sig</button>
     </form>
   </div>
+  <p class="report-link-row">
+    <a href="#report-panel">Report this file</a>
+  </p>
 </section>
 
-<section class="narrow panel">
+<section id="report-panel" class="narrow panel report-panel{% if report_form.errors %} has-errors{% endif %}">
   <h2>Report This File</h2>
   <form method="post" action="{{ report_url }}" class="stack">
     {% csrf_token %}

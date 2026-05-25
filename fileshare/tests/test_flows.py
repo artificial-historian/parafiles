@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+import json
 import os
 import uuid
 from datetime import timedelta
@@ -7,9 +10,10 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from django.conf import settings
-from django.core.cache import cache
 from django.core import mail
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.core.management.base import CommandError
@@ -35,8 +39,13 @@ from fileshare.models import (
     User,
 )
 from fileshare.services.cleanup import cleanup_expired_uploads
+from fileshare.services.email_verification import email_verification_token
 from fileshare.services.quotas import effective_quota
-from fileshare.services.storage import private_path
+from fileshare.services.storage import canonical_signature_payload, private_path
+
+
+TEST_SIGNATURE_PRIVATE_KEY = "ACpjVaW1y8Pt704l+EWKiqK1vJfJWhRfG6FJY1a+ULs="
+TEST_SIGNATURE_PUBLIC_KEY = "Luv36jdzpnhkYMSpZ8NWKZW+JbONOD1Dvd58RkZyY18="
 
 
 class ParafilesFlowTests(TestCase):
@@ -54,6 +63,8 @@ class ParafilesFlowTests(TestCase):
             PARAFILES_SCAN_SYNC=True,
             PARAFILES_ALLOW_SCAN_BYPASS=True,
             PARAFILES_CLAMAV_COMMAND="missing-clamscan-for-tests",
+            PARAFILES_SIGNATURE_PRIVATE_KEY=TEST_SIGNATURE_PRIVATE_KEY,
+            PARAFILES_SIGNATURE_PUBLIC_KEY=TEST_SIGNATURE_PUBLIC_KEY,
         )
         self.override.enable()
         cache.clear()
@@ -78,16 +89,35 @@ class ParafilesFlowTests(TestCase):
             storage_key=storage_key,
             size=len(body),
             content_type="application/octet-stream",
-            sha256="a" * 64,
+            sha256=hashlib.sha256(body).hexdigest(),
             status=StoredFile.Status.AVAILABLE,
         )
+
+    def assert_valid_signature_doc(
+        self, body: str, stored_file: StoredFile, filename: str
+    ) -> None:
+        document = json.loads(body)
+        signed = document["signed"]
+        self.assertEqual(signed["algorithm"], "Ed25519")
+        self.assertEqual(signed["purpose"], "parafiles-file-signature")
+        self.assertEqual(signed["version"], 1)
+        self.assertEqual(signed["file"]["name"], filename)
+        self.assertEqual(signed["file"]["size"], stored_file.size)
+        self.assertEqual(signed["file"]["sha256"], stored_file.sha256)
+
+        public_key_bytes = base64.b64decode(document["public_key"], validate=True)
+        signature_bytes = base64.b64decode(document["signature"], validate=True)
+        public_key = Ed25519PublicKey.from_public_bytes(public_key_bytes)
+        public_key.verify(signature_bytes, canonical_signature_payload(signed))
 
     def totp_token(self, device: TOTPDevice) -> str:
         totp = TOTP(device.bin_key, device.step, device.t0, device.digits, device.drift)
         return str(totp.token()).zfill(device.digits)
 
     def test_invite_registration_creates_uploader_and_root_folder(self):
-        invitation = Invitation.objects.create(expires_at=timezone.now() + timedelta(days=1))
+        invitation = Invitation.objects.create(
+            email="creator@example.test", expires_at=timezone.now() + timedelta(days=1)
+        )
         response = self.client.post(
             reverse("register_invite", args=[invitation.token]),
             {
@@ -101,9 +131,49 @@ class ParafilesFlowTests(TestCase):
         self.assertEqual(response.status_code, 302)
         user = User.objects.get(username="creator")
         self.assertTrue(user.is_uploader)
+        self.assertTrue(user.has_verified_email)
         self.assertTrue(Folder.objects.filter(owner=user, parent=None, name="").exists())
         invitation.refresh_from_db()
         self.assertIsNotNone(invitation.accepted_at)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_invite_registration_sends_verification_when_email_differs_from_invite(self):
+        invitation = Invitation.objects.create(
+            email="invited@example.test", expires_at=timezone.now() + timedelta(days=1)
+        )
+
+        response = self.client.post(
+            reverse("register_invite", args=[invitation.token]),
+            {
+                "username": "creator2",
+                "email": "other@example.test",
+                "password1": "A-very-long-test-password-123",
+                "password2": "A-very-long-test-password-123",
+                "alpha_notice": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        user = User.objects.get(username="creator2")
+        self.assertFalse(user.has_verified_email)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["other@example.test"])
+
+    def test_email_verification_marks_current_email_verified(self):
+        user = User.objects.create_user(
+            username="verifyemail",
+            email="verify@example.test",
+            password="pass",
+            is_uploader=True,
+        )
+        token = email_verification_token(user, "verify@example.test")
+
+        response = self.client.get(reverse("verify_email", args=[token]))
+
+        self.assertEqual(response.status_code, 302)
+        user.refresh_from_db()
+        self.assertTrue(user.has_verified_email)
+        self.assertEqual(user.verified_email, "verify@example.test")
 
     def test_invite_registration_requires_alpha_notice_acknowledgement(self):
         invitation = Invitation.objects.create(expires_at=timezone.now() + timedelta(days=1))
@@ -239,6 +309,7 @@ class ParafilesFlowTests(TestCase):
         stored_file = StoredFile.objects.get(owner=user)
         self.assertEqual(stored_file.original_filename, "unsafe.zip")
         self.assertEqual(stored_file.status, StoredFile.Status.AVAILABLE)
+        self.assertTrue(private_path(f"{stored_file.storage_key}.sig").exists())
 
         self.client.post(reverse("share_toggle", args=["file", stored_file.pk]), {"enabled": "1"})
         share = PublicShare.objects.get(stored_file=stored_file)
@@ -249,6 +320,13 @@ class ParafilesFlowTests(TestCase):
         self.assertEqual(b"".join(download.streaming_content), body)
         reused = self.client.get(prepare["Location"])
         self.assertEqual(reused.status_code, 403)
+
+        prepare_signature = self.client.post(reverse("prepare_signature_download", args=[share.slug]))
+        self.assertEqual(prepare_signature.status_code, 302)
+        signature = self.client.get(prepare_signature["Location"])
+        self.assertEqual(signature.status_code, 200)
+        signature_body = b"".join(signature.streaming_content).decode("utf-8")
+        self.assert_valid_signature_doc(signature_body, stored_file, "unsafe.zip")
 
     def test_quick_share_requires_login_and_renders_for_uploader(self):
         response = self.client.get(reverse("quick_share"))
@@ -652,6 +730,24 @@ class ParafilesFlowTests(TestCase):
             ).exists()
         )
 
+    def test_signature_download_generates_missing_sidecar_for_existing_file(self):
+        user = self.make_uploader()
+        stored_file = self.make_available_file(user, Folder.get_root(user), name="legacy.zip")
+        signature_path = private_path(f"{stored_file.storage_key}.sig")
+        self.assertFalse(signature_path.exists())
+        share = PublicShare.objects.create(
+            owner=user, target_type=PublicShare.TargetType.FILE, stored_file=stored_file
+        )
+
+        prepared = self.client.post(reverse("prepare_signature_download", args=[share.slug]))
+        self.assertEqual(prepared.status_code, 302)
+        response = self.client.get(prepared["Location"])
+
+        self.assertEqual(response.status_code, 200)
+        body = b"".join(response.streaming_content).decode("utf-8")
+        self.assertTrue(signature_path.exists())
+        self.assert_valid_signature_doc(body, stored_file, "legacy.zip")
+
     def test_account_settings_show_usage_and_update_email(self):
         user = self.make_uploader()
         root = Folder.get_root(user)
@@ -674,6 +770,59 @@ class ParafilesFlowTests(TestCase):
         self.assertEqual(post.status_code, 302)
         user.refresh_from_db()
         self.assertEqual(user.email, "new@example.test")
+        self.assertFalse(user.has_verified_email)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_account_settings_keeps_verified_email_until_new_email_verified(self):
+        user = self.make_uploader()
+        user.email = "old@example.test"
+        user.verified_email = "old@example.test"
+        user.email_verified_at = timezone.now()
+        user.save(update_fields=["email", "verified_email", "email_verified_at"])
+        self.client.force_login(user)
+
+        response = self.client.post(reverse("account_settings"), {"email": "new@example.test"})
+
+        self.assertEqual(response.status_code, 302)
+        user.refresh_from_db()
+        self.assertEqual(user.email, "old@example.test")
+        self.assertEqual(user.pending_email, "new@example.test")
+        self.assertTrue(user.has_verified_email)
+        self.assertEqual(len(mail.outbox), 1)
+        token = email_verification_token(user, "new@example.test")
+
+        verify = self.client.get(reverse("verify_email", args=[token]))
+
+        self.assertEqual(verify.status_code, 302)
+        user.refresh_from_db()
+        self.assertEqual(user.email, "new@example.test")
+        self.assertEqual(user.pending_email, "")
+        self.assertTrue(user.has_verified_email)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_password_reset_only_sends_for_verified_email(self):
+        verified = User.objects.create_user(
+            username="verifiedreset",
+            email="verified@example.test",
+            password="pass",
+            is_uploader=True,
+        )
+        verified.verified_email = "verified@example.test"
+        verified.email_verified_at = timezone.now()
+        verified.save(update_fields=["verified_email", "email_verified_at"])
+        User.objects.create_user(
+            username="unverifiedreset",
+            email="unverified@example.test",
+            password="pass",
+            is_uploader=True,
+        )
+
+        self.client.post(reverse("password_reset"), {"email": "unverified@example.test"})
+        self.assertEqual(len(mail.outbox), 0)
+
+        self.client.post(reverse("password_reset"), {"email": "verified@example.test"})
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["verified@example.test"])
 
     def test_account_settings_show_scan_status(self):
         user = self.make_uploader()
@@ -1654,6 +1803,8 @@ class ParafilesFlowTests(TestCase):
         PARAFILES_SERVE_PRIVATE_DOWNLOADS=False,
         PARAFILES_ALLOW_SCAN_BYPASS=False,
         PARAFILES_ADMIN_2FA_REQUIRED=True,
+        PARAFILES_SIGNATURE_PRIVATE_KEY=TEST_SIGNATURE_PRIVATE_KEY,
+        PARAFILES_SIGNATURE_PUBLIC_KEY=TEST_SIGNATURE_PUBLIC_KEY,
         CSRF_TRUSTED_ORIGINS=["https://files.paralives.example"],
         EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
     )
@@ -1673,6 +1824,8 @@ class ParafilesFlowTests(TestCase):
         ALLOWED_HOSTS=["parafiles.example.com"],
         PARAFILES_SERVE_PRIVATE_DOWNLOADS=True,
         PARAFILES_ADMIN_2FA_REQUIRED=False,
+        PARAFILES_SIGNATURE_PRIVATE_KEY="",
+        PARAFILES_SIGNATURE_PUBLIC_KEY="",
         CSRF_TRUSTED_ORIGINS=[],
         EMAIL_BACKEND="django.core.mail.backends.console.EmailBackend",
     )
@@ -1688,9 +1841,37 @@ class ParafilesFlowTests(TestCase):
                 "parafiles.E005",
                 "parafiles.E006",
                 "parafiles.E007",
+                "parafiles.E008",
+                "parafiles.E010",
                 "parafiles.W001",
                 "parafiles.W002",
                 "parafiles.W003",
                 "parafiles.W004",
             },
         )
+
+    @override_settings(
+        DEBUG=False,
+        SECRET_KEY="native-test-secret-7b8a50d0a1dc4f0bbcf94cc0f278c58df745fcadf2d2477090",
+        ALLOWED_HOSTS=["files.paralives.example"],
+        REDIS_URL="redis://127.0.0.1:6379/0",
+        PARAFILES_STORAGE_ROOT=Path("/srv/parafiles/private_uploads"),
+        PARAFILES_UPLOAD_SESSION_ROOT=Path("/srv/parafiles/upload_sessions"),
+        PARAFILES_SERVE_PRIVATE_DOWNLOADS=False,
+        PARAFILES_ALLOW_SCAN_BYPASS=False,
+        PARAFILES_ADMIN_2FA_REQUIRED=True,
+        PARAFILES_SIGNATURE_PRIVATE_KEY=TEST_SIGNATURE_PRIVATE_KEY,
+        PARAFILES_SIGNATURE_PUBLIC_KEY=base64.b64encode(b"x" * 32).decode("ascii"),
+        CSRF_TRUSTED_ORIGINS=["https://files.paralives.example"],
+        EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
+    )
+    def test_deploy_checks_reject_mismatched_signature_keypair(self):
+        databases = {
+            "default": {
+                "ENGINE": "django.db.backends.postgresql",
+                "NAME": "parafiles",
+            }
+        }
+        with patch.object(settings, "DATABASES", databases):
+            issue_ids = {issue.id for issue in parafiles_deploy_checks(None)}
+        self.assertEqual(issue_ids, {"parafiles.E009"})

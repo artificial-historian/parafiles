@@ -156,7 +156,9 @@
 </section>
 
 <script>
+(() => {
 const uploadForm = document.getElementById("upload-form");
+if (!uploadForm) return;
 const uploadStatus = document.getElementById("upload-status");
 const uploadButton = uploadForm.querySelector("button[type=submit]");
 const uploadResumePanel = document.getElementById("upload-resume-panel");
@@ -164,7 +166,22 @@ const uploadResumeList = document.getElementById("upload-resume-list");
 const uploadStoragePrefix = "parafiles-upload:";
 {% url 'upload_active' as upload_active_url %}
 const uploadActiveUrl = "{{ upload_active_url|escapejs }}";
-let uploadInProgress = false;
+const uploadState = window.ParafilesUploadState || { inProgress: false };
+window.ParafilesUploadState = uploadState;
+
+if (!window.ParafilesUploadBeforeUnloadBound) {
+  window.addEventListener("beforeunload", (event) => {
+    if (!uploadState.inProgress) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+  window.ParafilesUploadBeforeUnloadBound = true;
+}
+
+function setUploadInProgress(value) {
+  uploadState.inProgress = value;
+  document.documentElement.dataset.uploadInProgress = value ? "true" : "false";
+}
 
 function uploadPercent(bytesReceived, size) {
   if (!size) return 0;
@@ -286,12 +303,6 @@ async function loadActiveUploads() {
   renderResumeUploads(activeUploads);
 }
 
-window.addEventListener("beforeunload", (event) => {
-  if (!uploadInProgress) return;
-  event.preventDefault();
-  event.returnValue = "";
-});
-
 uploadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const file = document.getElementById("file-input").files[0];
@@ -342,7 +353,7 @@ uploadForm.addEventListener("submit", async (event) => {
   }
   const chunkSize = startedJson.chunk_size || (8 * 1024 * 1024);
   let offset = startedJson.bytes_received || 0;
-  uploadInProgress = true;
+  setUploadInProgress(true);
   uploadButton.disabled = true;
   try {
     while (offset < file.size) {
@@ -371,17 +382,22 @@ uploadForm.addEventListener("submit", async (event) => {
     if (finalized.ok) {
       uploadStatus.textContent = "Upload finished with status: " + finalizedJson.status;
       forgetUpload(startedJson);
-      window.location = finalizedJson.dashboard_url;
+      if (window.Parafiles && window.Parafiles.visit) {
+        window.Parafiles.visit(finalizedJson.dashboard_url, { push: false });
+      } else {
+        window.location = finalizedJson.dashboard_url;
+      }
     } else {
       uploadStatus.textContent = "Finalize failed.";
     }
   } finally {
-    uploadInProgress = false;
+    setUploadInProgress(false);
     uploadButton.disabled = false;
     loadActiveUploads();
   }
 });
 
 loadActiveUploads();
+})();
 </script>
 {% endblock %}

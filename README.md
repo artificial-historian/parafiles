@@ -44,14 +44,15 @@ On the server, run those commands as the dedicated `parafiles` user through the 
 - Schedule `python manage.py cleanup_uploads` or the `cleanup_expired_uploads_task` Celery task to clear expired staged upload chunks.
 - Run `python manage.py check_operations_health` during deployment to verify database, cache, storage, scanner, and worker settings.
 - Run ClamAV locally and configure `PARAFILES_CLAMAV_COMMAND`.
+- Configure `PARAFILES_SIGNATURE_PRIVATE_KEY` and publish the matching Ed25519 public key so `.sig` downloads can be verified.
 - Configure `VIRUSTOTAL_API_KEY` for hash reputation checks. Full file submission is disabled unless `VIRUSTOTAL_SUBMIT_FILES=true`.
-- Configure Django email settings and `DEFAULT_FROM_EMAIL` so staff-created uploader invitations can be delivered.
+- Configure Django email settings and `DEFAULT_FROM_EMAIL` so uploader invitations, email verification, and account recovery can be delivered.
 - Keep admin access behind HTTPS. `PARAFILES_ADMIN_2FA_REQUIRED` defaults to true when `DJANGO_DEBUG=false`; staff users must first sign in through `/accounts/login/` and enroll a TOTP authenticator before moderation or admin access.
 
 ## Core Flows
 
 - Staff or admin creates and emails a single-use invite.
-- Uploader registers from the invite URL.
+- Uploader registers from the invite URL and verifies a recovery email address.
 - Uploader creates folders, uploads chunked files, waits for scanning, and enables public shares.
 - Anonymous downloader opens `/file/<slug>/` or `/folder/<slug>/`, then downloads through a short-lived token.
 - Downloader can report abusive content from the public page.

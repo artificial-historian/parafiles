@@ -60,15 +60,23 @@ from .models import (
 )
 from .services.moderation import record_action
 from .services.health import operations_health
+from .services.email_verification import (
+    normalize_email,
+    send_email_verification,
+    unpack_email_verification_token,
+    verified_email_is_taken,
+)
 from .services.invitations import invitation_url, send_invitation_email
 from .services.quotas import effective_quota, file_count, storage_used, validate_upload_allowed
 from .services.scanning import run_scan_for_file
 from .services.security import content_disposition, request_ip_hash, request_user_agent_hash
 from .services.storage import (
     UploadOffsetMismatch,
+    ensure_signature_file,
     finalize_session,
     private_path,
     purge_file_bytes,
+    signature_storage_key,
     purge_folder_tree,
     temp_path_for_session,
     write_chunk,
@@ -121,21 +129,94 @@ def register_invite(request: HttpRequest, token: str) -> HttpResponse:
     invitation = get_object_or_404(Invitation, token=token)
     if not invitation.is_usable:
         return render(request, "fileshare/invite_invalid.html", status=410)
+    verification_email = ""
     if request.method == "POST":
         form = InvitationRegistrationForm(request.POST)
         if form.is_valid():
             with transaction.atomic():
                 user = form.save(commit=False)
                 user.email = form.cleaned_data["email"]
+                if invitation.email and normalize_email(invitation.email) == normalize_email(
+                    user.email
+                ):
+                    user.verified_email = normalize_email(user.email)
+                    user.email_verified_at = timezone.now()
+                else:
+                    verification_email = user.email
                 user.is_uploader = True
                 user.save()
                 Folder.get_root(user)
                 invitation.accept(user)
             login(request, user)
+            if verification_email:
+                send_email_verification(request, user, verification_email)
+                messages.success(
+                    request,
+                    "Account created. Check your email to verify the recovery address.",
+                )
             return redirect("dashboard")
     else:
         form = InvitationRegistrationForm(initial={"email": invitation.email})
-    return render(request, "fileshare/register_invite.html", {"form": form, "invitation": invitation})
+    return render(
+        request,
+        "fileshare/register_invite.html",
+        {"form": form, "invitation": invitation},
+    )
+
+
+def verify_email(request: HttpRequest, token: str) -> HttpResponse:
+    try:
+        user_id, email = unpack_email_verification_token(token)
+    except ValidationError:
+        return render(request, "fileshare/email_verification_invalid.html", status=400)
+
+    user = User.objects.filter(pk=user_id).first()
+    if user is None:
+        return render(request, "fileshare/email_verification_invalid.html", status=400)
+    if verified_email_is_taken(email, user):
+        messages.error(request, "This email address is already verified for another account.")
+        return redirect("login")
+
+    current_email = normalize_email(user.email)
+    pending_email = normalize_email(user.pending_email)
+    if pending_email == email:
+        user.email = email
+        user.verified_email = email
+        user.email_verified_at = timezone.now()
+        user.pending_email = ""
+        user.save(
+            update_fields=["email", "verified_email", "email_verified_at", "pending_email"]
+        )
+    elif current_email == email:
+        user.verified_email = email
+        user.email_verified_at = timezone.now()
+        if pending_email == email:
+            user.pending_email = ""
+            user.save(update_fields=["verified_email", "email_verified_at", "pending_email"])
+        else:
+            user.save(update_fields=["verified_email", "email_verified_at"])
+    else:
+        return render(request, "fileshare/email_verification_invalid.html", status=400)
+
+    messages.success(request, "Email address verified.")
+    if request.user.is_authenticated and request.user.pk == user.pk:
+        return redirect("account_settings")
+    return redirect("login")
+
+
+@require_POST
+@login_required
+def resend_email_verification(request: HttpRequest) -> HttpResponse:
+    user = request.user
+    email = normalize_email(user.pending_email or ("" if user.has_verified_email else user.email))
+    if not email:
+        messages.error(request, "There is no email address waiting for verification.")
+    elif verified_email_is_taken(email, user):
+        messages.error(request, "This email address is already verified for another account.")
+    else:
+        send_email_verification(request, user, email)
+        messages.success(request, "Verification email sent.")
+    return redirect("account_settings")
 
 
 def owned_folder_or_404(user, folder_id: int | None) -> Folder:
@@ -295,13 +376,83 @@ def files_and_shares(request: HttpRequest) -> HttpResponse:
 @uploader_required
 def account_settings(request: HttpRequest) -> HttpResponse:
     if request.method == "POST":
-        form = AccountSettingsForm(request.POST, instance=request.user)
+        user = request.user
+        original_email = user.email
+        original_verified_email = user.verified_email
+        original_email_verified_at = user.email_verified_at
+        current_email = normalize_email(original_email)
+        pending_email = normalize_email(user.pending_email)
+        had_verified_email = bool(
+            current_email
+            and normalize_email(original_verified_email) == current_email
+            and original_email_verified_at
+        )
+        form = AccountSettingsForm(request.POST, instance=user)
         if form.is_valid():
-            form.save()
-            messages.success(request, "Account settings updated.")
+            user.email = original_email
+            user.verified_email = original_verified_email
+            user.email_verified_at = original_email_verified_at
+            new_email = form.cleaned_data["email"]
+
+            if not new_email:
+                user.email = ""
+                user.verified_email = ""
+                user.email_verified_at = None
+                user.pending_email = ""
+                user.save(
+                    update_fields=[
+                        "email",
+                        "verified_email",
+                        "email_verified_at",
+                        "pending_email",
+                    ]
+                )
+                messages.success(request, "Account email removed.")
+            elif current_email == new_email:
+                user.email = new_email
+                if had_verified_email:
+                    user.verified_email = new_email
+                    user.save(update_fields=["email", "verified_email"])
+                    messages.success(request, "Account settings updated.")
+                else:
+                    user.save(update_fields=["email"])
+                    send_email_verification(request, user, new_email)
+                    messages.success(request, "Verification email sent.")
+            elif pending_email == new_email:
+                send_email_verification(request, user, new_email)
+                messages.success(request, "Verification email resent.")
+            elif had_verified_email:
+                user.pending_email = new_email
+                user.save(update_fields=["pending_email"])
+                send_email_verification(request, user, new_email)
+                messages.success(
+                    request,
+                    (
+                        "Verification email sent. Your current recovery email remains active "
+                        "until the new address is verified."
+                    ),
+                )
+            else:
+                user.email = new_email
+                user.verified_email = ""
+                user.email_verified_at = None
+                user.pending_email = ""
+                user.save(
+                    update_fields=[
+                        "email",
+                        "verified_email",
+                        "email_verified_at",
+                        "pending_email",
+                    ]
+                )
+                send_email_verification(request, user, new_email)
+                messages.success(request, "Verification email sent.")
             return redirect("account_settings")
     else:
-        form = AccountSettingsForm(instance=request.user)
+        form = AccountSettingsForm(
+            instance=request.user,
+            initial={"email": request.user.pending_email or request.user.email},
+        )
 
     quota = effective_quota(request.user)
     shares = (
@@ -329,6 +480,7 @@ def account_settings(request: HttpRequest) -> HttpResponse:
         "shares": shares,
         "recent_downloads": recent_downloads,
         "recent_scans": recent_scans,
+        "has_verified_email": request.user.has_verified_email,
     }
     return render(request, "fileshare/account_settings.html", context)
 
@@ -923,12 +1075,9 @@ def signature_artifact_for(
     if signature_file_id is not None:
         return None
 
-    storage_key = f"{stored_file.storage_key}.sig"
-    path = private_path(storage_key)
-    try:
-        stat = path.stat()
-    except FileNotFoundError:
-        return None
+    storage_key = signature_storage_key(stored_file)
+    path = ensure_signature_file(stored_file)
+    stat = path.stat()
     if not path.is_file():
         return None
     return {
@@ -1264,7 +1413,7 @@ def download_signature_file(
         storage_key=str(signature_artifact["storage_key"]),
         filename=str(signature_artifact["filename"]),
         size=int(signature_artifact["size"]),
-        content_type="application/pgp-signature",
+        content_type="application/json",
         limit_rate=token_payload["rate"]
         if token_payload.get("slow") and token_payload.get("rate")
         else None,

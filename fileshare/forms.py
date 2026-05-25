@@ -3,7 +3,9 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django import forms
-from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth import get_user_model
+from django.contrib.auth.forms import PasswordResetForm, UserCreationForm
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import (
@@ -16,6 +18,7 @@ from .models import (
     StoredFile,
     User,
 )
+from .services.email_verification import normalize_email
 from .services.security import sanitize_filename
 
 
@@ -29,6 +32,14 @@ class InvitationRegistrationForm(UserCreationForm):
     class Meta:
         model = User
         fields = ("username", "email", "password1", "password2")
+
+    def clean_email(self) -> str:
+        email = normalize_email(self.cleaned_data["email"])
+        if User.objects.filter(
+            Q(email__iexact=email) | Q(pending_email__iexact=email)
+        ).exists():
+            raise forms.ValidationError("An account is already using this email address.")
+        return email
 
 
 class InvitationCreateForm(forms.ModelForm):
@@ -47,6 +58,31 @@ class AccountSettingsForm(forms.ModelForm):
     class Meta:
         model = User
         fields = ("email",)
+
+    def clean_email(self) -> str:
+        email = normalize_email(self.cleaned_data.get("email"))
+        if not email:
+            return ""
+        existing = User.objects.filter(
+            Q(email__iexact=email) | Q(pending_email__iexact=email)
+        ).exclude(pk=self.instance.pk)
+        if existing.exists():
+            raise forms.ValidationError("An account is already using this email address.")
+        return email
+
+
+class VerifiedEmailPasswordResetForm(PasswordResetForm):
+    def get_users(self, email):
+        email = normalize_email(email)
+        user_model = get_user_model()
+        users = user_model._default_manager.filter(email__iexact=email, is_active=True)
+        return (
+            user
+            for user in users
+            if user.has_usable_password()
+            and user.has_verified_email
+            and normalize_email(user.email) == email
+        )
 
 
 class TwoFactorTokenForm(forms.Form):

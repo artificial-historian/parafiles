@@ -47,9 +47,11 @@
   </form>
 </section>
 <script>
+(() => {
 const alphaNotice = document.getElementById("alpha-notice");
 const alphaContinue = document.getElementById("alpha-continue");
 const alphaCheckbox = document.getElementById("id_alpha_notice");
+if (!alphaNotice || !alphaContinue || !alphaCheckbox) return;
 
 function updateAlphaContinue() {
   alphaContinue.disabled = !alphaCheckbox.checked;
@@ -62,5 +64,6 @@ alphaContinue.addEventListener("click", () => {
   }
 });
 updateAlphaContinue();
+})();
 </script>
 {% endblock %}

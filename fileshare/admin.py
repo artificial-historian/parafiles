@@ -26,7 +26,15 @@ from .tasks import scan_file_task
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
-    list_display = ("username", "email", "is_uploader", "is_staff", "is_active", "date_joined")
+    list_display = (
+        "username",
+        "email",
+        "verified_email",
+        "is_uploader",
+        "is_staff",
+        "is_active",
+        "date_joined",
+    )
     list_filter = ("is_uploader", "is_staff", "is_active")
     search_fields = ("username", "email")
     fieldsets = DjangoUserAdmin.fieldsets + (
@@ -34,6 +42,9 @@ class UserAdmin(DjangoUserAdmin):
             "Parafiles",
             {
                 "fields": (
+                    "verified_email",
+                    "email_verified_at",
+                    "pending_email",
                     "is_uploader",
                     "storage_quota_bytes",
                     "max_file_size_bytes",
