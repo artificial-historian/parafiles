@@ -39,7 +39,7 @@ class InvitationRegistrationForm(UserCreationForm):
             "infringement, or violations of law."
         ),
     )
-    alpha_notice = forms.BooleanField(
+    beta_notice = forms.BooleanField(
         required=True,
         label=(
             "I understand that Parafiles is a free beta service, not a file locker "

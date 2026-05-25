@@ -6,7 +6,7 @@
   <h1>Create Uploader Account</h1>
   <form method="post" class="stack" id="registration-form">
     {% csrf_token %}
-    <dialog class="modal" id="alpha-notice" open>
+    <dialog class="modal" id="beta-notice" open>
       <div class="modal-content">
         <h2>Important Beta Notice</h2>
         <p>Parafiles is now a beta-stage service intended to remain available for the community, but it is still provided as a free, best-effort service. It may contain bugs, incomplete workflows, upload or download failures, moderation mistakes, and operational issues.</p>
@@ -16,11 +16,11 @@
         <p>The site operator can access uploaded files and related metadata when needed for operations, moderation, abuse handling, legal compliance, security, and debugging. Upload only files you have the right to share and that you are comfortable hosting through this service.</p>
         <p>Do not upload sensitive personal data, private credentials, illegal material, malware, paid mod reuploads, stolen creator assets, leaked builds, or anything you would not want reviewed or removed if required.</p>
         <label class="check-row">
-          {{ form.alpha_notice }}
-          <span>{{ form.alpha_notice.label }}</span>
+          {{ form.beta_notice }}
+          <span>{{ form.beta_notice.label }}</span>
         </label>
-        {% if form.alpha_notice.errors %}<div class="message error">{{ form.alpha_notice.errors }}</div>{% endif %}
-        <button type="button" id="alpha-continue">Continue</button>
+        {% if form.beta_notice.errors %}<div class="message error">{{ form.beta_notice.errors }}</div>{% endif %}
+        <button type="button" id="beta-continue">Continue</button>
       </div>
     </dialog>
     <p>
@@ -66,22 +66,22 @@
 </section>
 <script>
 (() => {
-const alphaNotice = document.getElementById("alpha-notice");
-const alphaContinue = document.getElementById("alpha-continue");
-const alphaCheckbox = document.getElementById("id_alpha_notice");
-if (!alphaNotice || !alphaContinue || !alphaCheckbox) return;
+const betaNotice = document.getElementById("beta-notice");
+const betaContinue = document.getElementById("beta-continue");
+const betaCheckbox = document.getElementById("id_beta_notice");
+if (!betaNotice || !betaContinue || !betaCheckbox) return;
 
-function updateAlphaContinue() {
-  alphaContinue.disabled = !alphaCheckbox.checked;
+function updateBetaContinue() {
+  betaContinue.disabled = !betaCheckbox.checked;
 }
 
-alphaCheckbox.addEventListener("change", updateAlphaContinue);
-alphaContinue.addEventListener("click", () => {
-  if (alphaCheckbox.checked) {
-    alphaNotice.close();
+betaCheckbox.addEventListener("change", updateBetaContinue);
+betaContinue.addEventListener("click", () => {
+  if (betaCheckbox.checked) {
+    betaNotice.close();
   }
 });
-updateAlphaContinue();
+updateBetaContinue();
 })();
 </script>
 {% endblock %}

@@ -128,7 +128,7 @@ class ParafilesFlowTests(TestCase):
                 "terms_accepted": "on",
                 "age_confirmed": "on",
                 "upload_review_consent": "on",
-                "alpha_notice": "on",
+                "beta_notice": "on",
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -155,7 +155,7 @@ class ParafilesFlowTests(TestCase):
                 "terms_accepted": "on",
                 "age_confirmed": "on",
                 "upload_review_consent": "on",
-                "alpha_notice": "on",
+                "beta_notice": "on",
             },
         )
 
