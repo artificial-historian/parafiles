@@ -1677,6 +1677,36 @@ class ParafilesFlowTests(TestCase):
         with self.assertRaises(CommandError):
             call_command("check_operations_health", stdout=StringIO())
 
+    def test_reset_site_management_command_clears_database_only_by_default(self):
+        user = self.make_uploader(username="resetuser")
+        stored_file = self.make_available_file(user, Folder.get_root(user), name="reset.zip")
+        file_path = private_path(stored_file.storage_key)
+        output = StringIO()
+
+        call_command("reset_site", "--noinput", stdout=output)
+
+        self.assertFalse(User.objects.filter(username="resetuser").exists())
+        self.assertFalse(StoredFile.objects.filter(pk=stored_file.pk).exists())
+        self.assertTrue(file_path.exists())
+        self.assertIn("File data will be left untouched.", output.getvalue())
+
+    def test_reset_site_management_command_can_remove_file_data(self):
+        user = self.make_uploader(username="resetfilesuser")
+        self.make_available_file(user, Folder.get_root(user), name="reset-files.zip")
+        output = StringIO()
+
+        with patch(
+            "fileshare.management.commands.reset_site.Command.clear_directory"
+        ) as clear_directory:
+            call_command("reset_site", "--noinput", "--remove-files", stdout=output)
+
+        self.assertFalse(User.objects.filter(username="resetfilesuser").exists())
+        self.assertEqual(
+            [call_args.args[0] for call_args in clear_directory.call_args_list],
+            [settings.PARAFILES_STORAGE_ROOT, settings.PARAFILES_UPLOAD_SESSION_ROOT],
+        )
+        self.assertIn("File data cleared:", output.getvalue())
+
     def test_staff_can_bulk_resolve_reports(self):
         uploader = self.make_uploader()
         staff = User.objects.create_user(

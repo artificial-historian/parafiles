@@ -114,6 +114,7 @@ Install the helper command for Django management tasks:
 
 ```sh
 sudo install -o root -g root -m 0755 /srv/parafiles/app/deploy/run-manage.sh /usr/local/bin/parafiles-manage
+sudo install -o root -g root -m 0755 /srv/parafiles/app/deploy/reset-site.sh /usr/local/bin/parafiles-reset-site
 ```
 
 ## File Signing
@@ -256,6 +257,37 @@ Back up all of these together:
 - `/srv/parafiles/.env`
 
 The database stores logical folder/file metadata, public share slugs, scan state, audit logs, reports, and quota overrides. The private upload directory stores the bytes. Restoring only one without the other will leave broken file references.
+
+## Reset Site Data
+
+Run resets on the server through the installed management helper so the command uses `/srv/parafiles/.env`, the production database URL, and the configured storage paths.
+
+Stop writers first:
+
+```sh
+sudo systemctl stop parafiles-gunicorn parafiles-celery
+```
+
+Reset database rows only:
+
+```sh
+sudo -u parafiles /usr/local/bin/parafiles-reset-site
+```
+
+Reset database rows and remove uploaded/staged file data:
+
+```sh
+sudo -u parafiles /usr/local/bin/parafiles-reset-site --remove-files
+```
+
+Then create the first administrator again and restart services:
+
+```sh
+sudo -u parafiles /usr/local/bin/parafiles-manage createsuperuser
+sudo systemctl start parafiles-gunicorn parafiles-celery
+```
+
+For non-interactive automation, add `--noinput`. Use that only after taking backups and confirming the target environment.
 
 ## Smoke Test Checklist
 

@@ -43,6 +43,7 @@ On the server, run those commands as the dedicated `parafiles` user through the 
 - Run a Celery worker for scan jobs.
 - Schedule `python manage.py cleanup_uploads` or the `cleanup_expired_uploads_task` Celery task to clear expired staged upload chunks.
 - Run `python manage.py check_operations_health` during deployment to verify database, cache, storage, scanner, and worker settings.
+- Run `parafiles-reset-site` on the server to reset database rows; add `--remove-files` only when uploaded and staged file data should also be removed.
 - Run ClamAV locally and configure `PARAFILES_CLAMAV_COMMAND`.
 - Configure `PARAFILES_SIGNATURE_PRIVATE_KEY` and publish the matching Ed25519 public key so `.sig` downloads can be verified.
 - Configure `VIRUSTOTAL_API_KEY` for hash reputation checks. Full file submission is disabled unless `VIRUSTOTAL_SUBMIT_FILES=true`.
