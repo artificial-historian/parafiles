@@ -4,6 +4,11 @@ from . import views
 
 urlpatterns = [
     path("", views.home, name="home"),
+    path("legal/terms/", views.terms, name="terms"),
+    path("legal/privacy/", views.privacy, name="privacy"),
+    path("legal/cookies/", views.cookies, name="cookies"),
+    path("legal/copyright-abuse/", views.copyright_abuse, name="copyright_abuse"),
+    path("contact/", views.contact, name="contact"),
     path("register/<str:token>/", views.register_invite, name="register_invite"),
     path("accounts/email/verify/<str:token>/", views.verify_email, name="verify_email"),
     path(
@@ -57,6 +62,7 @@ urlpatterns = [
     path("d/<str:slug>/", views.public_folder, name="public_folder"),
     path("file/<str:slug>/", views.public_file),
     path("folder/<str:slug>/", views.public_folder),
+    path("report/", views.copyright_abuse, name="abuse_reporting"),
     path("report/thanks/", views.report_thanks, name="report_thanks"),
     path("report/<str:slug>/", views.report_share, name="report_share"),
     path("download/prepare/<str:slug>/", views.prepare_download, name="prepare_download"),

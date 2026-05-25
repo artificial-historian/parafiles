@@ -157,6 +157,10 @@ PARAFILES_STORAGE_ROOT = Path(
     os.environ.get("PARAFILES_STORAGE_ROOT", BASE_DIR / "var" / "private_uploads")
 )
 PARAFILES_SITE_NAME = os.environ.get("PARAFILES_SITE_NAME", "Parafiles")
+PARAFILES_CONTACT_EMAIL = os.environ.get("PARAFILES_CONTACT_EMAIL", "contact@parafiles.net")
+PARAFILES_ABUSE_EMAIL = os.environ.get("PARAFILES_ABUSE_EMAIL", "abuse@parafiles.net")
+PARAFILES_PRIVACY_EMAIL = os.environ.get("PARAFILES_PRIVACY_EMAIL", "privacy@parafiles.net")
+PARAFILES_SECURITY_EMAIL = os.environ.get("PARAFILES_SECURITY_EMAIL", "security@parafiles.net")
 PARAFILES_UPLOAD_SESSION_ROOT = Path(
     os.environ.get("PARAFILES_UPLOAD_SESSION_ROOT", BASE_DIR / "var" / "upload_sessions")
 )

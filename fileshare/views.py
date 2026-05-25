@@ -125,7 +125,37 @@ def uploader_required(view_func):
 def home(request: HttpRequest) -> HttpResponse:
     if request.user.is_authenticated:
         return redirect("dashboard")
-    return redirect("login")
+    return render(request, "fileshare/home.html", legal_contact_context())
+
+
+def legal_contact_context() -> dict[str, str]:
+    return {
+        "site_name": settings.PARAFILES_SITE_NAME,
+        "contact_email": settings.PARAFILES_CONTACT_EMAIL,
+        "abuse_email": settings.PARAFILES_ABUSE_EMAIL,
+        "privacy_email": settings.PARAFILES_PRIVACY_EMAIL,
+        "security_email": settings.PARAFILES_SECURITY_EMAIL,
+    }
+
+
+def terms(request: HttpRequest) -> HttpResponse:
+    return render(request, "fileshare/legal_terms.html", legal_contact_context())
+
+
+def privacy(request: HttpRequest) -> HttpResponse:
+    return render(request, "fileshare/legal_privacy.html", legal_contact_context())
+
+
+def cookies(request: HttpRequest) -> HttpResponse:
+    return render(request, "fileshare/legal_cookies.html", legal_contact_context())
+
+
+def copyright_abuse(request: HttpRequest) -> HttpResponse:
+    return render(request, "fileshare/legal_copyright_abuse.html", legal_contact_context())
+
+
+def contact(request: HttpRequest) -> HttpResponse:
+    return render(request, "fileshare/contact.html", legal_contact_context())
 
 
 def register_invite(request: HttpRequest, token: str) -> HttpResponse:

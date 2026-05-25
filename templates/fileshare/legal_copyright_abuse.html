@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Copyright and Abuse Reporting - Parafiles{% endblock %}
+{% block content %}
+<article class="legal-page">
+  <h1>Copyright and Abuse Reporting</h1>
+  <p class="muted">Last updated: 25 May 2026</p>
+
+  <section class="legal-summary">
+    <h2>Summary</h2>
+    <p>Use this page to report copyright infringement, malware, illegal content, privacy violations, security abuse, or other violations involving Parafiles. Repeat infringers and abusive accounts may be suspended or terminated.</p>
+  </section>
+
+  <section>
+    <h2>Report Content</h2>
+    <p>If you believe content hosted on Parafiles infringes your rights or violates the law, send a report to <a href="mailto:{{ abuse_email }}">{{ abuse_email }}</a>.</p>
+    <p>Please include:</p>
+    <ul>
+      <li>your contact information;</li>
+      <li>identification of the copyrighted work or affected right;</li>
+      <li>the exact Parafiles URL or URLs;</li>
+      <li>a clear explanation of the issue;</li>
+      <li>a statement of good-faith belief;</li>
+      <li>a statement that the information is accurate.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Abuse and Security</h2>
+    <p>For malware, phishing, credential theft, platform attacks, or other security abuse, contact <a href="mailto:{{ security_email }}">{{ security_email }}</a> or <a href="mailto:{{ abuse_email }}">{{ abuse_email }}</a>. Include URLs, timestamps, technical indicators, and any safe reproduction details you can provide.</p>
+  </section>
+
+  <section>
+    <h2>DSA and DMCA-Style Notices</h2>
+    <p>Parafiles accepts structured copyright and platform-abuse notices at <a href="mailto:{{ abuse_email }}">{{ abuse_email }}</a>, including DMCA-style notices where useful. Notices related to EU Digital Services Act or platform abuse issues should clearly identify the content, the legal or policy basis for the report, and the requested action.</p>
+  </section>
+
+  <section>
+    <h2>What We May Do</h2>
+    <p>We may remove content, disable access, request additional information, preserve relevant evidence, contact the uploader, or terminate repeat infringers. False, incomplete, or abusive reports may be rejected.</p>
+  </section>
+
+  <section>
+    <h2>Public Share Reports</h2>
+    <p>When viewing a public file or folder page, you may also use the "Report this file" or "Report this folder" link to submit a report tied directly to that share.</p>
+  </section>
+</article>
+{% endblock %}

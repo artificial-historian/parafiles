@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Parafiles - Private mod file hosting{% endblock %}
+{% block content %}
+<section class="landing-hero" style="--landing-image: url('{% static 'fileshare/town-scene.svg' %}')">
+  <div class="landing-hero-copy">
+    <h1>Parafiles</h1>
+    <p>Invitation-only file hosting for Paralives mod creators and testers.</p>
+    <p class="landing-login">Invited uploader? <a href="{% url 'login' %}">Sign in</a>.</p>
+  </div>
+</section>
+
+<section class="landing-band">
+  <div>
+    <h2>What This Site Does</h2>
+    <p>Parafiles helps invited creators upload mod packages, organize files into folders, and share short public download links. Public visitors can download shared files, check basic metadata, and report files or folders that appear unsafe, unlawful, or infringing.</p>
+  </div>
+  <div>
+    <h2>How It Is Run</h2>
+    <p>The service is operated as a small EU-hosted project. Accounts are private and invitation-only, uploads may be scanned or reviewed for abuse, and files are hosted as available rather than as permanent storage.</p>
+  </div>
+  <div>
+    <h2>Before Using It</h2>
+    <p>Only upload files you have the legal right to distribute. Do not upload paid mod reuploads, stolen creator assets, leaked builds, malware, sensitive personal data, or anything that violates applicable law.</p>
+  </div>
+</section>
+{% endblock %}

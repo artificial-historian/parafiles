@@ -66,6 +66,14 @@
       {% csrf_token %}
       <input type="hidden" name="folder_id" value="{{ current_folder.pk }}">
       <input type="file" id="file-input" required>
+      <div class="upload-warning">
+        <strong>Before uploading</strong>
+        <p>By uploading content, you confirm that you own it or have the legal right to distribute it; that it does not infringe copyright, trademarks, privacy rights, or applicable law; that it does not contain malware or malicious code; and that you grant Parafiles the limited technical rights necessary to host and distribute the uploaded files.</p>
+        <label class="check-row">
+          <input type="checkbox" id="upload-consent" required>
+          <span>I understand and agree.</span>
+        </label>
+      </div>
       <button type="submit">Upload file</button>
       <p id="upload-status" class="muted"></p>
     </form>
@@ -161,6 +169,7 @@ const uploadForm = document.getElementById("upload-form");
 if (!uploadForm) return;
 const uploadStatus = document.getElementById("upload-status");
 const uploadButton = uploadForm.querySelector("button[type=submit]");
+const uploadConsent = document.getElementById("upload-consent");
 const uploadResumePanel = document.getElementById("upload-resume-panel");
 const uploadResumeList = document.getElementById("upload-resume-list");
 const uploadStoragePrefix = "parafiles-upload:";
@@ -181,6 +190,16 @@ if (!window.ParafilesUploadBeforeUnloadBound) {
 function setUploadInProgress(value) {
   uploadState.inProgress = value;
   document.documentElement.dataset.uploadInProgress = value ? "true" : "false";
+  updateUploadControls();
+}
+
+function updateUploadControls() {
+  if (!uploadButton) return;
+  uploadButton.disabled = uploadState.inProgress || (uploadConsent && !uploadConsent.checked);
+}
+
+if (uploadConsent) {
+  uploadConsent.addEventListener("change", updateUploadControls);
 }
 
 function uploadPercent(bytesReceived, size) {
@@ -305,6 +324,12 @@ async function loadActiveUploads() {
 
 uploadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (uploadConsent && !uploadConsent.checked) {
+    uploadStatus.textContent = "Confirm upload responsibility first.";
+    uploadConsent.focus();
+    updateUploadControls();
+    return;
+  }
   const file = document.getElementById("file-input").files[0];
   if (!file) return;
   uploadStatus.textContent = "Starting upload...";
@@ -336,6 +361,7 @@ uploadForm.addEventListener("submit", async (event) => {
     start.append("filename", file.name);
     start.append("size", file.size);
     start.append("content_type", file.type || "application/octet-stream");
+    start.append("upload_terms", "on");
     const started = await fetch("{% url 'upload_start' %}", { method: "POST", body: start, headers: { "Accept": "application/json" } });
     startedJson = await started.json();
     if (!started.ok) {
@@ -354,7 +380,7 @@ uploadForm.addEventListener("submit", async (event) => {
   const chunkSize = startedJson.chunk_size || (8 * 1024 * 1024);
   let offset = startedJson.bytes_received || 0;
   setUploadInProgress(true);
-  uploadButton.disabled = true;
+  updateUploadControls();
   try {
     while (offset < file.size) {
       uploadStatus.textContent = `Uploading ${uploadPercent(offset, file.size)}%...`;
@@ -392,11 +418,12 @@ uploadForm.addEventListener("submit", async (event) => {
     }
   } finally {
     setUploadInProgress(false);
-    uploadButton.disabled = false;
+    updateUploadControls();
     loadActiveUploads();
   }
 });
 
+updateUploadControls();
 loadActiveUploads();
 })();
 </script>

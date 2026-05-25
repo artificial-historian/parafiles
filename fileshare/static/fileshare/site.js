@@ -298,6 +298,76 @@
     textArea.remove();
   }
 
+  function storageGet(key) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function storageSet(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+    } catch (error) {
+      // If storage is unavailable, the current button press still dismisses the notice.
+    }
+  }
+
+  function setupCookieNotice() {
+    const banner = document.getElementById("cookie-banner");
+    if (!banner) return;
+    const dialog = document.getElementById("cookie-settings-dialog");
+    const storageKey = "parafiles-cookie-choice";
+
+    function closeDialog() {
+      if (!dialog) return;
+      if (typeof dialog.close === "function") {
+        dialog.close();
+      } else {
+        dialog.hidden = true;
+      }
+    }
+
+    function rememberChoice(choice) {
+      storageSet(storageKey, JSON.stringify({ choice, recorded_at: new Date().toISOString() }));
+      banner.hidden = true;
+      closeDialog();
+    }
+
+    if (storageGet(storageKey)) {
+      banner.hidden = true;
+    } else {
+      banner.hidden = false;
+    }
+
+    document.addEventListener("click", (event) => {
+      const choiceButton = event.target.closest("[data-cookie-choice]");
+      if (choiceButton) {
+        event.preventDefault();
+        rememberChoice(choiceButton.dataset.cookieChoice);
+        return;
+      }
+
+      const settingsButton = event.target.closest("[data-cookie-settings]");
+      if (settingsButton && dialog) {
+        event.preventDefault();
+        if (typeof dialog.showModal === "function") {
+          dialog.showModal();
+        } else {
+          dialog.hidden = false;
+        }
+        return;
+      }
+
+      const closeButton = event.target.closest("[data-cookie-settings-close]");
+      if (closeButton) {
+        event.preventDefault();
+        closeDialog();
+      }
+    });
+  }
+
   document.addEventListener("click", async (event) => {
     const navToggle = event.target.closest(".nav-toggle");
     if (navToggle) {
@@ -364,4 +434,6 @@
     ...(window.Parafiles || {}),
     visit,
   };
+
+  setupCookieNotice();
 })();

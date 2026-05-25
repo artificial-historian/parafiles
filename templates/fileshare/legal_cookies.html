@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Cookie Policy - Parafiles{% endblock %}
+{% block content %}
+<article class="legal-page">
+  <h1>Cookie Policy</h1>
+  <p class="muted">Last updated: 25 May 2026</p>
+
+  <section class="legal-summary">
+    <h2>Summary</h2>
+    <p>Parafiles uses necessary cookies for login, security, and core functionality. Optional analytics cookies are not required for the service and should only be used with consent where required.</p>
+  </section>
+
+  <section>
+    <h2>Necessary Cookies</h2>
+    <p>Necessary cookies support login sessions, CSRF protection, security, preferences, and basic site functionality. These cookies are required for private account areas and upload workflows to work.</p>
+  </section>
+
+  <section>
+    <h2>Optional Cookies</h2>
+    <p>Optional analytics or non-essential cookies may be used only where legally permitted and, where required, after consent. Rejecting optional cookies should not block core file hosting functionality.</p>
+  </section>
+
+  <section>
+    <h2>Managing Choices</h2>
+    <p>The cookie banner lets visitors accept or reject optional cookies. Browser settings may also be used to delete or block cookies, but blocking necessary cookies can prevent login, uploads, and account security features from working.</p>
+  </section>
+
+  <section>
+    <h2>Contact</h2>
+    <p>Questions about cookies or privacy may be sent to <a href="mailto:{{ privacy_email }}">{{ privacy_email }}</a>.</p>
+  </section>
+</article>
+{% endblock %}

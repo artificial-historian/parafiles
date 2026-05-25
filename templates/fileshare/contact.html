@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Contact - Parafiles{% endblock %}
+{% block content %}
+<article class="legal-page">
+  <h1>Contact</h1>
+  <p class="muted">Last updated: 25 May 2026</p>
+
+  <section class="legal-summary">
+    <h2>Summary</h2>
+    <p>Use the correct address so legal, privacy, security, and general requests can be handled with the right context.</p>
+  </section>
+
+  <dl class="contact-list">
+    <div>
+      <dt>Copyright, abuse, DSA, and takedown reports</dt>
+      <dd><a href="mailto:{{ abuse_email }}">{{ abuse_email }}</a></dd>
+    </div>
+    <div>
+      <dt>Security reports</dt>
+      <dd><a href="mailto:{{ security_email }}">{{ security_email }}</a></dd>
+    </div>
+    <div>
+      <dt>Privacy and GDPR requests</dt>
+      <dd><a href="mailto:{{ privacy_email }}">{{ privacy_email }}</a></dd>
+    </div>
+    <div>
+      <dt>General contact</dt>
+      <dd><a href="mailto:{{ contact_email }}">{{ contact_email }}</a></dd>
+    </div>
+  </dl>
+
+  <section>
+    <h2>Reporting Notes</h2>
+    <p>For copyright or abuse reports, include exact URLs, your contact information, the affected work or right, the reason for the report, and enough detail to evaluate the issue. Repeat infringers may be banned.</p>
+  </section>
+</article>
+{% endblock %}

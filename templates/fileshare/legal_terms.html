@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Terms of Service - Parafiles{% endblock %}
+{% block content %}
+<article class="legal-page">
+  <h1>Terms of Service</h1>
+  <p class="muted">Last updated: 25 May 2026</p>
+
+  <section class="legal-summary">
+    <h2>Summary</h2>
+    <p>Parafiles is an invitation-only file hosting service for mod-related files. You must be at least 16, keep your account secure, upload only content you are allowed to distribute, and avoid illegal, infringing, malicious, abusive, or privacy-invasive content. Files and accounts may be moderated, limited, suspended, or removed when needed for security, operations, or legal compliance.</p>
+    <p>This page is a practical baseline and should be reviewed by a qualified lawyer before launch.</p>
+  </section>
+
+  <section>
+    <h2>Introduction</h2>
+    <p>Welcome to {{ site_name }} ("Parafiles", "we", "our", or "us"), a private invitation-only file hosting service intended primarily for the Paralives modding community.</p>
+    <p>By accessing or using Parafiles, you agree to these Terms of Service. If you do not agree, you must not use the service.</p>
+    <p>Parafiles is operated by an individual resident in Italy using infrastructure hosted in Finland.</p>
+  </section>
+
+  <section>
+    <h2>Eligibility</h2>
+    <p>You must be at least 16 years old, have legal capacity to agree to these Terms, and comply with all applicable laws while using the service.</p>
+    <p>We may refuse access or terminate accounts where reasonably necessary to protect the service, users, or legal compliance obligations.</p>
+  </section>
+
+  <section>
+    <h2>Acceptable Use</h2>
+    <p>You may not upload, distribute, store, or link to content that:</p>
+    <ul>
+      <li>infringes copyright, trademarks, or other intellectual property rights;</li>
+      <li>contains malware, ransomware, exploits, or malicious code;</li>
+      <li>is unlawful under applicable law;</li>
+      <li>contains child sexual abuse material or exploitative content;</li>
+      <li>promotes terrorism or organized criminal activity;</li>
+      <li>constitutes fraud, phishing, impersonation, or credential theft;</li>
+      <li>invades privacy or exposes personal data without authorization;</li>
+      <li>is intended to harass, threaten, or abuse others;</li>
+      <li>attempts to disrupt, overload, bypass, or attack the service infrastructure;</li>
+      <li>reuploads paid mods, stolen creator assets, leaked or private builds, or malware-packed mods.</li>
+    </ul>
+    <p>We reserve the right to remove content or suspend accounts without prior notice where reasonably necessary.</p>
+  </section>
+
+  <section>
+    <h2>Copyright</h2>
+    <p>You retain ownership of your uploaded content. By uploading files, you grant Parafiles a limited, non-exclusive license to store, process, transmit, cache, and distribute the content solely for operation of the service.</p>
+    <p>You represent that you have the legal right to upload and distribute the content. Repeat copyright infringers may have their accounts terminated.</p>
+  </section>
+
+  <section>
+    <h2>Content Moderation</h2>
+    <p>Parafiles does not actively pre-screen all uploads. However, we may review files, metadata, reports, and account activity for abuse prevention, malware detection, legal compliance, service security, and enforcement of these Terms.</p>
+  </section>
+
+  <section>
+    <h2>Account Security</h2>
+    <p>You are responsible for maintaining password confidentiality, activity occurring under your account, and ensuring uploaded files are safe and lawful. You must notify us promptly of unauthorized account access.</p>
+  </section>
+
+  <section>
+    <h2>Availability</h2>
+    <p>The service is provided on an "as available" and "as is" basis. We do not guarantee uninterrupted availability, permanent file retention, specific download speeds, or error-free operation.</p>
+    <p>Files may be removed due to inactivity, storage limits, abuse reports, legal requests, moderation decisions, or technical issues.</p>
+  </section>
+
+  <section>
+    <h2>Limitation of Liability</h2>
+    <p>To the maximum extent permitted by applicable law, Parafiles shall not be liable for indirect or consequential damages, loss of data, loss of profits, service interruptions, or unauthorized access caused by third parties.</p>
+    <p>Nothing in these Terms excludes liability that cannot legally be excluded under applicable law.</p>
+  </section>
+
+  <section>
+    <h2>Termination</h2>
+    <p>We may suspend or terminate accounts where these Terms are violated, abuse or unlawful activity is suspected, action is necessary for security or legal compliance, or the service is discontinued. Users may request account deletion by contacting us.</p>
+  </section>
+
+  <section>
+    <h2>Governing Law</h2>
+    <p>These Terms are governed by the laws of Italy, except where mandatory provisions of European Union law apply.</p>
+  </section>
+
+  <section>
+    <h2>Contact</h2>
+    <p>Legal and abuse contact: <a href="mailto:{{ abuse_email }}">{{ abuse_email }}</a></p>
+    <p>General contact: <a href="mailto:{{ contact_email }}">{{ contact_email }}</a></p>
+  </section>
+</article>
+{% endblock %}

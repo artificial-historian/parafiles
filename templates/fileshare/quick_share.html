@@ -13,6 +13,16 @@
 
   <form id="quick-share-csrf">{% csrf_token %}</form>
 
+  <section class="upload-warning quick-upload-consent">
+    <strong>Before uploading</strong>
+    <p>By uploading content, you confirm that you own it or have the legal right to distribute it; that it does not infringe copyright, trademarks, privacy rights, or applicable law; that it does not contain malware or malicious code; and that you grant Parafiles the limited technical rights necessary to host and distribute the uploaded files.</p>
+    <label class="check-row">
+      <input type="checkbox" id="quick-upload-consent" required>
+      <span>I understand and agree.</span>
+    </label>
+    <p id="quick-consent-status" class="muted"></p>
+  </section>
+
   <section id="drop-zone" class="quick-drop-zone" tabindex="0">
     <div>
       <strong>Drop files here</strong>
@@ -71,6 +81,8 @@ const queuePanel = document.getElementById("queue-panel");
 const queueList = document.getElementById("queue-list");
 const copyAllButton = document.getElementById("copy-all-button");
 const sessionWarning = document.getElementById("session-warning");
+const uploadConsent = document.getElementById("quick-upload-consent");
+const consentStatus = document.getElementById("quick-consent-status");
 const folderDialog = document.getElementById("folder-dialog");
 const folderDialogFile = document.getElementById("folder-dialog-file");
 const folderDialogClose = document.getElementById("folder-dialog-close");
@@ -82,6 +94,26 @@ const folderCreateName = document.getElementById("folder-create-name");
 const rows = new Map();
 let folders = [];
 let activeFolderRowId = null;
+
+function updateConsentState() {
+  const allowed = !uploadConsent || uploadConsent.checked;
+  fileInput.disabled = !allowed;
+  dropZone.classList.toggle("is-disabled", !allowed);
+  dropZone.setAttribute("aria-disabled", allowed ? "false" : "true");
+  if (allowed && consentStatus) consentStatus.textContent = "";
+}
+
+function requireUploadConsent() {
+  if (!uploadConsent || uploadConsent.checked) return true;
+  if (consentStatus) consentStatus.textContent = "Confirm upload responsibility first.";
+  uploadConsent.focus();
+  updateConsentState();
+  return false;
+}
+
+if (uploadConsent) {
+  uploadConsent.addEventListener("change", updateConsentState);
+}
 
 function uploadFolderUrl(uploadId) {
   return quickShareUrls.uploadFolder.replace("00000000-0000-0000-0000-000000000000", uploadId);
@@ -248,6 +280,7 @@ async function startUploadSession(row) {
       filename: row.file.name,
       size: row.file.size,
       content_type: row.file.type || "application/octet-stream",
+      upload_terms: "on",
     },
     row.abortController.signal,
   );
@@ -327,6 +360,7 @@ async function uploadFile(row) {
 }
 
 function enqueueFiles(fileList) {
+  if (!requireUploadConsent()) return;
   const files = [...fileList].filter((file) => file.size > 0);
   for (const file of files) {
     const row = {
@@ -503,10 +537,14 @@ copyAllButton.addEventListener("click", async () => {
   setTimeout(() => { copyAllButton.innerHTML = '<span aria-hidden="true">⧉</span> Copy all links'; }, 1200);
 });
 
-dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("click", () => {
+  if (!requireUploadConsent()) return;
+  fileInput.click();
+});
 dropZone.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
+    if (!requireUploadConsent()) return;
     fileInput.click();
   }
 });
@@ -520,12 +558,14 @@ dropZone.addEventListener("dragleave", () => {
 dropZone.addEventListener("drop", (event) => {
   event.preventDefault();
   dropZone.classList.remove("dragover");
+  if (!requireUploadConsent()) return;
   enqueueFiles(event.dataTransfer.files);
 });
 fileInput.addEventListener("change", () => {
   enqueueFiles(fileInput.files);
   fileInput.value = "";
 });
+updateConsentState();
 })();
 </script>
 {% endblock %}

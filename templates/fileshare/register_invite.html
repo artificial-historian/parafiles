@@ -8,12 +8,13 @@
     {% csrf_token %}
     <dialog class="modal" id="alpha-notice" open>
       <div class="modal-content">
-        <h2>Important Alpha Notice</h2>
-        <p>Parafiles is currently an MVP alpha being tested with invited users. Do not rely on it for secure, private, permanent, or highly available storage.</p>
-        <p>Accounts, uploads, share links, metadata, and activity may be changed, disabled, or deleted without notice during testing, including during resets.</p>
-        <p>The interface and workflows are unfinished. Please report major bugs, failed uploads or downloads, data loss, access problems, or security concerns. Cosmetic feedback is welcome, but it is not the focus of this test.</p>
-        <p>The site operator can access uploaded files and related metadata for operations, moderation, and debugging. Upload only files you have the right to share and that you are comfortable making available through this test service.</p>
-        <p>Do not upload sensitive personal data, private credentials, illegal material, malware, or anything you would not want reviewed by the operator or removed during testing.</p>
+        <h2>Important Beta Notice</h2>
+        <p>Parafiles is now a beta-stage service intended to remain available for the community, but it is still provided as a free, best-effort service. It may contain bugs, incomplete workflows, upload or download failures, moderation mistakes, and operational issues.</p>
+        <p>Parafiles is not a file locker, archive, or backup service. Do not use it as the only copy of any file or project. You are responsible for keeping your own local or independent backups of anything you upload.</p>
+        <p>Uploads, accounts, metadata, folders, and share links are not guaranteed. Data may be lost, corrupted, disabled, hidden, removed, or made unavailable in exceptional cases, including security incidents, legal or abuse reports, malware detection, storage limits, maintenance, technical failure, or service changes.</p>
+        <p>No warranty is given for availability, privacy, security, file integrity, retention, download speed, compatibility, or fitness for any purpose. The service is offered as available and may change without prior notice.</p>
+        <p>The site operator can access uploaded files and related metadata when needed for operations, moderation, abuse handling, legal compliance, security, and debugging. Upload only files you have the right to share and that you are comfortable hosting through this service.</p>
+        <p>Do not upload sensitive personal data, private credentials, illegal material, malware, paid mod reuploads, stolen creator assets, leaked builds, or anything you would not want reviewed or removed if required.</p>
         <label class="check-row">
           {{ form.alpha_notice }}
           <span>{{ form.alpha_notice.label }}</span>
@@ -42,6 +43,23 @@
       {{ form.password2 }}
       {{ form.password2.errors }}
     </p>
+    <div class="consent-box">
+      <label class="check-row">
+        {{ form.terms_accepted }}
+        <span>I have read and agree to the <a href="{% url 'terms' %}" target="_blank" rel="noopener">Terms of Service</a> and <a href="{% url 'privacy' %}" target="_blank" rel="noopener">Privacy Policy</a>.</span>
+      </label>
+      {% if form.terms_accepted.errors %}<div class="message error">{{ form.terms_accepted.errors }}</div>{% endif %}
+      <label class="check-row">
+        {{ form.age_confirmed }}
+        <span>{{ form.age_confirmed.label }}</span>
+      </label>
+      {% if form.age_confirmed.errors %}<div class="message error">{{ form.age_confirmed.errors }}</div>{% endif %}
+      <label class="check-row">
+        {{ form.upload_review_consent }}
+        <span>{{ form.upload_review_consent.label }}</span>
+      </label>
+      {% if form.upload_review_consent.errors %}<div class="message error">{{ form.upload_review_consent.errors }}</div>{% endif %}
+    </div>
     {{ form.non_field_errors }}
     <button type="submit">Create account</button>
   </form>

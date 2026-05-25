@@ -125,6 +125,9 @@ class ParafilesFlowTests(TestCase):
                 "email": "creator@example.test",
                 "password1": "A-very-long-test-password-123",
                 "password2": "A-very-long-test-password-123",
+                "terms_accepted": "on",
+                "age_confirmed": "on",
+                "upload_review_consent": "on",
                 "alpha_notice": "on",
             },
         )
@@ -149,6 +152,9 @@ class ParafilesFlowTests(TestCase):
                 "email": "other@example.test",
                 "password1": "A-very-long-test-password-123",
                 "password2": "A-very-long-test-password-123",
+                "terms_accepted": "on",
+                "age_confirmed": "on",
+                "upload_review_consent": "on",
                 "alpha_notice": "on",
             },
         )
@@ -175,7 +181,30 @@ class ParafilesFlowTests(TestCase):
         self.assertTrue(user.has_verified_email)
         self.assertEqual(user.verified_email, "verify@example.test")
 
-    def test_invite_registration_requires_alpha_notice_acknowledgement(self):
+    def test_public_home_and_legal_pages_render(self):
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Invitation-only file hosting")
+        self.assertContains(response, reverse("login"))
+        self.assertContains(response, reverse("terms"))
+        self.assertContains(response, reverse("privacy"))
+        self.assertContains(response, reverse("copyright_abuse"))
+        self.assertContains(response, reverse("contact"))
+
+        for url_name, expected in (
+            ("terms", "Terms of Service"),
+            ("privacy", "Privacy Policy"),
+            ("cookies", "Cookie Policy"),
+            ("copyright_abuse", "Copyright and Abuse Reporting"),
+            ("contact", "Privacy and GDPR requests"),
+            ("abuse_reporting", "Repeat infringers"),
+        ):
+            page = self.client.get(reverse(url_name))
+            self.assertEqual(page.status_code, 200)
+            self.assertContains(page, expected)
+
+    def test_invite_registration_requires_beta_notice_acknowledgement(self):
         invitation = Invitation.objects.create(expires_at=timezone.now() + timedelta(days=1))
 
         response = self.client.post(
@@ -189,7 +218,7 @@ class ParafilesFlowTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Important Alpha Notice")
+        self.assertContains(response, "Important Beta Notice")
         self.assertFalse(User.objects.filter(username="creator").exists())
 
     @override_settings(
@@ -287,6 +316,7 @@ class ParafilesFlowTests(TestCase):
                 "filename": "../unsafe.zip",
                 "size": len(body),
                 "content_type": "application/zip",
+                "upload_terms": "on",
             },
             HTTP_ACCEPT="application/json",
         )
@@ -328,6 +358,24 @@ class ParafilesFlowTests(TestCase):
         signature_body = b"".join(signature.streaming_content).decode("utf-8")
         self.assert_valid_signature_doc(signature_body, stored_file, "unsafe.zip")
 
+    def test_upload_start_requires_upload_terms_acknowledgement(self):
+        user = self.make_uploader()
+        self.client.force_login(user)
+
+        response = self.client.post(
+            reverse("upload_start"),
+            {
+                "folder_id": Folder.get_root(user).pk,
+                "filename": "no-consent.zip",
+                "size": 4,
+                "content_type": "application/zip",
+            },
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("upload_terms", response.json()["errors"])
+
     def test_quick_share_requires_login_and_renders_for_uploader(self):
         response = self.client.get(reverse("quick_share"))
         self.assertEqual(response.status_code, 302)
@@ -354,6 +402,7 @@ class ParafilesFlowTests(TestCase):
                 "filename": "quick.zip",
                 "size": len(body),
                 "content_type": "application/zip",
+                "upload_terms": "on",
             },
             HTTP_ACCEPT="application/json",
         )
@@ -427,6 +476,7 @@ class ParafilesFlowTests(TestCase):
                 "filename": "queued.zip",
                 "size": 12,
                 "content_type": "application/zip",
+                "upload_terms": "on",
             },
             HTTP_ACCEPT="application/json",
         )
@@ -461,6 +511,7 @@ class ParafilesFlowTests(TestCase):
                 "filename": "mod.zip",
                 "size": len(body),
                 "content_type": "application/zip",
+                "upload_terms": "on",
             },
             HTTP_ACCEPT="application/json",
         )
@@ -484,6 +535,7 @@ class ParafilesFlowTests(TestCase):
                 "filename": "resume.zip",
                 "size": len(body),
                 "content_type": "application/zip",
+                "upload_terms": "on",
             },
             HTTP_ACCEPT="application/json",
         )

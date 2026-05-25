@@ -57,6 +57,37 @@
     {% endif %}
     {% block content %}{% endblock %}
   </main>
+  <footer class="site-footer">
+    <nav aria-label="Legal and contact links">
+      <a href="{% url 'terms' %}">Terms</a>
+      <a href="{% url 'privacy' %}">Privacy</a>
+      <a href="{% url 'copyright_abuse' %}">Copyright / Abuse Reporting</a>
+      <a href="{% url 'cookies' %}">Cookies</a>
+      <a href="{% url 'contact' %}">Contact</a>
+    </nav>
+  </footer>
+  <section id="cookie-banner" class="cookie-banner" hidden aria-label="Cookie notice">
+    <p>Parafiles uses necessary cookies for login, security, and core functionality. Optional analytics cookies may be used only with your consent. See our <a href="{% url 'privacy' %}">Privacy Policy</a> for details.</p>
+    <div class="cookie-actions">
+      <button type="button" data-cookie-choice="accept">Accept</button>
+      <button type="button" class="secondary" data-cookie-choice="reject">Reject Optional Cookies</button>
+      <button type="button" class="link-button" data-cookie-settings>Settings</button>
+    </div>
+  </section>
+  <dialog id="cookie-settings-dialog" class="modal">
+    <div class="modal-content">
+      <div class="split">
+        <h2>Cookie Settings</h2>
+        <button type="button" class="link-button" data-cookie-settings-close>Close</button>
+      </div>
+      <p>Necessary cookies keep sessions, CSRF protection, security checks, and basic preferences working. They cannot be disabled through this banner.</p>
+      <p>Optional analytics cookies are not required for core file hosting. If they are enabled later, they should only run after consent where required.</p>
+      <div class="cookie-actions">
+        <button type="button" data-cookie-choice="accept">Accept</button>
+        <button type="button" class="secondary" data-cookie-choice="reject">Reject Optional Cookies</button>
+      </div>
+    </div>
+  </dialog>
   <script src="{% static 'fileshare/site.js' %}" defer></script>
 </body>
 </html>

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy - Parafiles{% endblock %}
+{% block content %}
+<article class="legal-page">
+  <h1>Privacy Policy</h1>
+  <p class="muted">Last updated: 25 May 2026</p>
+
+  <section class="legal-summary">
+    <h2>Summary</h2>
+    <p>Parafiles processes account details, upload metadata, cookies, IP addresses, browser/device data, access logs, and abuse/security reports so the service can authenticate users, host files, deliver downloads, prevent abuse, and meet legal obligations.</p>
+    <p>This page is a practical baseline and should be reviewed by a qualified lawyer before launch.</p>
+  </section>
+
+  <section>
+    <h2>Data Controller</h2>
+    <p>Parafiles is operated by a private individual resident in Italy.</p>
+    <p>Privacy contact: <a href="mailto:{{ privacy_email }}">{{ privacy_email }}</a></p>
+  </section>
+
+  <section>
+    <h2>Data We Collect</h2>
+    <p>We may collect email address, username, IP address, browser and device information, upload metadata, server and access logs, abuse and security reports, cookies, and session information.</p>
+  </section>
+
+  <section>
+    <h2>Why We Process Data</h2>
+    <p>We process personal data for account management, authentication, file hosting and delivery, abuse prevention, malware and security detection, legal compliance, service analytics, and reliability.</p>
+    <p>Legal bases may include performance of a contract, legitimate interests, legal obligations, and user consent where required.</p>
+  </section>
+
+  <section>
+    <h2>Uploads, Logs, and Security Review</h2>
+    <p>Uploaded files, metadata, reports, IP-derived security records, and account activity may be reviewed when needed to detect abuse, investigate malware, respond to copyright or legal notices, maintain service reliability, or enforce the Terms of Service.</p>
+  </section>
+
+  <section>
+    <h2>Retention</h2>
+    <p>We retain data only as long as reasonably necessary for operation of the service, security, legal obligations, and dispute handling. Backups and logs may persist temporarily after deletion.</p>
+  </section>
+
+  <section>
+    <h2>User Rights</h2>
+    <p>Under GDPR, users may have rights to access personal data, rectify inaccurate data, request deletion, restrict processing, object to certain processing, data portability, and lodge a complaint with a supervisory authority.</p>
+    <p>Requests may be sent to <a href="mailto:{{ privacy_email }}">{{ privacy_email }}</a>.</p>
+  </section>
+
+  <section>
+    <h2>Security</h2>
+    <p>We implement reasonable technical and organizational measures to protect personal data. However, no online service can guarantee absolute security.</p>
+  </section>
+
+  <section>
+    <h2>International Transfers</h2>
+    <p>Data may be processed within the European Union and associated hosting infrastructure.</p>
+  </section>
+
+  <section>
+    <h2>Cookies</h2>
+    <p>Parafiles uses cookies necessary for login sessions, CSRF protection, security, preferences, and service functionality. Optional analytics or non-essential cookies will only be used where legally permitted and, where required, after consent.</p>
+    <p>See the <a href="{% url 'cookies' %}">Cookie Policy</a> for more detail.</p>
+  </section>
+</article>
+{% endblock %}

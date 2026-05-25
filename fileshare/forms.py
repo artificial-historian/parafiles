@@ -24,9 +24,27 @@ from .services.security import sanitize_filename
 
 class InvitationRegistrationForm(UserCreationForm):
     email = forms.EmailField(required=True)
+    terms_accepted = forms.BooleanField(
+        required=True,
+        label="I have read and agree to the Terms of Service and Privacy Policy.",
+    )
+    age_confirmed = forms.BooleanField(
+        required=True,
+        label="I confirm that I am at least 16 years old.",
+    )
+    upload_review_consent = forms.BooleanField(
+        required=True,
+        label=(
+            "I understand that uploads may be reviewed for abuse, malware, copyright "
+            "infringement, or violations of law."
+        ),
+    )
     alpha_notice = forms.BooleanField(
         required=True,
-        label="I understand this is an alpha test service and not permanent private storage.",
+        label=(
+            "I understand that Parafiles is a free beta service, not a file locker "
+            "or backup service, and that I must keep my own copies of uploaded data."
+        ),
     )
 
     class Meta:
@@ -138,6 +156,7 @@ class UploadStartForm(forms.Form):
     size = forms.IntegerField(min_value=1)
     content_type = forms.CharField(max_length=255, required=False)
     sha256 = forms.RegexField(regex=r"^[A-Fa-f0-9]{64}$", required=False)
+    upload_terms = forms.BooleanField(required=True)
 
     def clean_filename(self) -> str:
         return sanitize_filename(self.cleaned_data["filename"])
