@@ -78,6 +78,11 @@ urlpatterns = [
         views.moderation_operations_health,
         name="moderation_operations_health",
     ),
+    path(
+        "moderation/email/",
+        views.moderation_email_diagnostics,
+        name="moderation_email_diagnostics",
+    ),
     path("moderation/invitations/", views.moderation_invitations, name="moderation_invitations"),
     path(
         "moderation/invitations/<int:invitation_id>/resend/",

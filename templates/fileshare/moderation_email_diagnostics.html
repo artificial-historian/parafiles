@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Email Diagnostics - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Email Diagnostics</h1>
+    <p class="muted">Send a controlled test message through the active Django email backend.</p>
+  </div>
+  <div class="actions">
+    <a href="{% url 'moderation_operations_health' %}">Operations</a>
+    <a href="{% url 'moderation_invitations' %}">Invitations</a>
+    <a href="{% url 'moderation_dashboard' %}">Back to moderation</a>
+  </div>
+</section>
+
+<section class="grid-two">
+  <div class="panel">
+    <h2>Send Test Email</h2>
+    <form method="post" class="stack">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <div class="filter-actions">
+        <button type="submit">Send diagnostic email</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Active Settings</h2>
+    <div class="table email-settings">
+      <div class="table-head">Setting</div>
+      <div class="table-head">Value</div>
+      {% for item in email_settings %}
+        <div>{{ item.name }}</div>
+        <div class="hash">{{ item.value }}</div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Configuration Notes</h2>
+  {% if configuration_notes %}
+    <div class="list">
+      {% for note in configuration_notes %}
+        <div class="list-row">
+          <span class="status {{ note.status }}">{{ note.status|title }}</span>
+          <span>{{ note.detail }}</span>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="muted">No configuration warnings detected.</p>
+  {% endif %}
+</section>
+
+{% if result %}
+  <section class="metrics">
+    <div class="metric">
+      <span>Result</span>
+      <strong class="status {{ result.status }}">{{ result.status|title }}</strong>
+      <small>{{ result.started_at }}</small>
+    </div>
+    <div class="metric">
+      <span>Duration</span>
+      <strong>{{ result.duration_ms }} ms</strong>
+      <small>backend round trip</small>
+    </div>
+    <div class="metric">
+      <span>Recipient</span>
+      <strong class="hash">{{ result.recipient }}</strong>
+      <small>diagnostic target</small>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Send Result</h2>
+    <dl class="meta">
+      <div><dt>Backend</dt><dd class="hash">{{ result.backend }}</dd></div>
+      <div><dt>Sender</dt><dd class="hash">{{ result.sender }}</dd></div>
+      <div><dt>Recipient</dt><dd class="hash">{{ result.recipient }}</dd></div>
+    </dl>
+    <div class="table email-steps">
+      <div class="table-head">Step</div>
+      <div class="table-head">Status</div>
+      <div class="table-head">Detail</div>
+      <div class="table-head">Time</div>
+      {% for step in result.steps %}
+        <div>{{ step.name }}</div>
+        <div><span class="status {{ step.status }}">{{ step.status|title }}</span></div>
+        <div class="hash">{{ step.detail }}</div>
+        <div>{{ step.duration_ms }} ms</div>
+      {% endfor %}
+    </div>
+    {% if result.status == "ok" %}
+      <p class="muted">The backend accepted the message. Inbox delivery can still depend on provider policy, DNS authentication, spam filtering, and recipient-side handling.</p>
+    {% endif %}
+  </section>
+{% endif %}
+{% endblock %}

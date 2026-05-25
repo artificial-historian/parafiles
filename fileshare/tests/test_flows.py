@@ -1446,6 +1446,47 @@ class ParafilesFlowTests(TestCase):
         self.assertContains(response, "Protected downloads")
         self.assertContains(response, "Celery broker")
 
+    def test_staff_can_view_email_diagnostics(self):
+        staff = User.objects.create_user(
+            username="mailstaff", password="pass", is_staff=True, is_uploader=True
+        )
+        self.client.force_login(staff)
+
+        response = self.client.get(reverse("moderation_email_diagnostics"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Email Diagnostics")
+        self.assertContains(response, "Email backend")
+        self.assertContains(response, "SMTP host")
+        self.assertContains(response, "SMTP password")
+
+    @override_settings(
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="diagnostics@example.test",
+    )
+    def test_staff_can_send_email_diagnostic(self):
+        staff = User.objects.create_user(
+            username="mailsendstaff", password="pass", is_staff=True, is_uploader=True
+        )
+        self.client.force_login(staff)
+
+        response = self.client.post(
+            reverse("moderation_email_diagnostics"),
+            {
+                "recipient": "recipient@example.test",
+                "subject": "Diagnostic subject",
+                "body": "Diagnostic body",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Backend accepted 1 message.")
+        self.assertContains(response, "recipient@example.test")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].from_email, "diagnostics@example.test")
+        self.assertEqual(mail.outbox[0].to, ["recipient@example.test"])
+        self.assertEqual(mail.outbox[0].subject, "Diagnostic subject")
+
     @override_settings(PARAFILES_ALLOW_SCAN_BYPASS=False)
     def test_operations_health_flags_required_missing_clamav_as_error(self):
         staff = User.objects.create_user(

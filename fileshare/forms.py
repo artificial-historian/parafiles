@@ -54,6 +54,18 @@ class InvitationCreateForm(forms.ModelForm):
         return self.cleaned_data["email"].strip().lower()
 
 
+class EmailDiagnosticForm(forms.Form):
+    recipient = forms.EmailField()
+    subject = forms.CharField(max_length=180, initial="Parafiles email diagnostic")
+    body = forms.CharField(
+        widget=forms.Textarea(attrs={"rows": 6}),
+        initial=(
+            "This is a Parafiles diagnostic email. If this message reached you, "
+            "Django handed mail to the configured email backend successfully."
+        ),
+    )
+
+
 class AccountSettingsForm(forms.ModelForm):
     class Meta:
         model = User

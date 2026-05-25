@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from base64 import b32encode
 from datetime import timedelta
 from urllib.parse import quote, urlencode
@@ -12,6 +13,7 @@ from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, SuspiciousOperation, ValidationError
 from django.core.cache import cache
+from django.core.mail import EmailMessage, get_connection
 from django.db import transaction
 from django.db import connection
 from django.db.models import Count, F, Q, Sum
@@ -28,6 +30,7 @@ from django_otp.plugins.otp_totp.models import TOTPDevice
 from .forms import (
     AbuseReportForm,
     AccountSettingsForm,
+    EmailDiagnosticForm,
     FileMetadataForm,
     FileRenameForm,
     FolderForm,
@@ -1595,6 +1598,163 @@ def moderation_rate_limit_events(request: HttpRequest) -> HttpResponse:
     )
 
 
+def email_diagnostic_settings() -> list[dict[str, str]]:
+    password_state = "Set (hidden)" if settings.EMAIL_HOST_PASSWORD else "Not set"
+    host_user = settings.EMAIL_HOST_USER or "Not set"
+    return [
+        {"name": "Email backend", "value": settings.EMAIL_BACKEND},
+        {"name": "Default from", "value": settings.DEFAULT_FROM_EMAIL or "Not set"},
+        {"name": "SMTP host", "value": settings.EMAIL_HOST or "Not set"},
+        {"name": "SMTP port", "value": str(settings.EMAIL_PORT)},
+        {"name": "SMTP username", "value": host_user},
+        {"name": "SMTP password", "value": password_state},
+        {"name": "Use TLS", "value": "Yes" if settings.EMAIL_USE_TLS else "No"},
+        {"name": "Use SSL", "value": "Yes" if settings.EMAIL_USE_SSL else "No"},
+        {"name": "Timeout", "value": f"{settings.EMAIL_TIMEOUT} seconds"},
+    ]
+
+
+def email_configuration_notes() -> list[dict[str, str]]:
+    notes = []
+    backend = settings.EMAIL_BACKEND
+    if settings.EMAIL_USE_TLS and settings.EMAIL_USE_SSL:
+        notes.append(
+            {
+                "status": "error",
+                "detail": "EMAIL_USE_TLS and EMAIL_USE_SSL are both enabled. Use only one.",
+            }
+        )
+    if backend.endswith("console.EmailBackend"):
+        notes.append(
+            {
+                "status": "warn",
+                "detail": "The console email backend writes messages to server output and does not contact SMTP.",
+            }
+        )
+    if backend.endswith("locmem.EmailBackend"):
+        notes.append(
+            {
+                "status": "warn",
+                "detail": "The in-memory email backend captures messages for tests and does not contact SMTP.",
+            }
+        )
+    if backend.endswith("smtp.EmailBackend") and not settings.EMAIL_HOST_USER:
+        notes.append(
+            {
+                "status": "warn",
+                "detail": "SMTP username is empty. Authenticated providers usually require EMAIL_HOST_USER.",
+            }
+        )
+    return notes
+
+
+def exception_detail(exc: Exception) -> str:
+    detail = f"{exc.__class__.__name__}: {exc}"
+    smtp_code = getattr(exc, "smtp_code", None)
+    smtp_error = getattr(exc, "smtp_error", None)
+    if isinstance(smtp_error, bytes):
+        smtp_error = smtp_error.decode("utf-8", errors="replace")
+    if smtp_code is not None and smtp_error:
+        detail = f"{detail} (SMTP {smtp_code}: {smtp_error})"
+    return detail
+
+
+def run_email_diagnostic(recipient: str, subject: str, body: str) -> dict:
+    started_at = timezone.now()
+    started = time.monotonic()
+    steps: list[dict[str, str | int]] = []
+    status = "ok"
+    connection_obj = None
+    backend_class = settings.EMAIL_BACKEND
+
+    def add_step(name: str, step_status: str, detail: str, step_started: float) -> None:
+        steps.append(
+            {
+                "name": name,
+                "status": step_status,
+                "detail": detail,
+                "duration_ms": round((time.monotonic() - step_started) * 1000),
+            }
+        )
+
+    def finish() -> dict:
+        return {
+            "status": status,
+            "started_at": started_at,
+            "duration_ms": round((time.monotonic() - started) * 1000),
+            "backend": backend_class,
+            "sender": settings.DEFAULT_FROM_EMAIL,
+            "recipient": recipient,
+            "steps": steps,
+        }
+
+    step_started = time.monotonic()
+    try:
+        connection_obj = get_connection(fail_silently=False)
+        backend_class = (
+            f"{connection_obj.__class__.__module__}.{connection_obj.__class__.__name__}"
+        )
+    except Exception as exc:
+        status = "error"
+        add_step("Build backend", "error", exception_detail(exc), step_started)
+        return finish()
+    add_step("Build backend", "ok", backend_class, step_started)
+
+    step_started = time.monotonic()
+    try:
+        opened = connection_obj.open()
+    except Exception as exc:
+        status = "error"
+        add_step("Open connection", "error", exception_detail(exc), step_started)
+        try:
+            connection_obj.close()
+        except Exception:
+            pass
+        return finish()
+    if opened:
+        open_detail = "Connection opened and backend authentication completed."
+    else:
+        open_detail = "Backend did not need a new network connection."
+    add_step("Open connection", "ok", open_detail, step_started)
+
+    message = EmailMessage(
+        subject=subject,
+        body=body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[recipient],
+        headers={"X-Parafiles-Diagnostic": "true"},
+        connection=connection_obj,
+    )
+    step_started = time.monotonic()
+    try:
+        sent_count = connection_obj.send_messages([message]) or 0
+    except Exception as exc:
+        status = "error"
+        add_step("Send message", "error", exception_detail(exc), step_started)
+    else:
+        if sent_count == 1:
+            add_step("Send message", "ok", "Backend accepted 1 message.", step_started)
+        else:
+            status = "warn"
+            add_step(
+                "Send message",
+                "warn",
+                f"Backend returned {sent_count} accepted messages.",
+                step_started,
+            )
+
+    step_started = time.monotonic()
+    try:
+        connection_obj.close()
+    except Exception as exc:
+        if status == "ok":
+            status = "warn"
+        add_step("Close connection", "warn", exception_detail(exc), step_started)
+    else:
+        add_step("Close connection", "ok", "Connection closed.", step_started)
+    return finish()
+
+
 @staff_member_required
 def moderation_operations_health(request: HttpRequest) -> HttpResponse:
     status, checks = operations_health()
@@ -1604,6 +1764,38 @@ def moderation_operations_health(request: HttpRequest) -> HttpResponse:
         {
             "status": status,
             "checks": checks,
+        },
+    )
+
+
+@staff_member_required
+def moderation_email_diagnostics(request: HttpRequest) -> HttpResponse:
+    result = None
+    if request.method == "POST":
+        form = EmailDiagnosticForm(request.POST)
+        if form.is_valid():
+            result = run_email_diagnostic(
+                form.cleaned_data["recipient"],
+                form.cleaned_data["subject"],
+                form.cleaned_data["body"],
+            )
+            if result["status"] == "ok":
+                messages.success(request, "Diagnostic email accepted by the configured backend.")
+            elif result["status"] == "warn":
+                messages.warning(request, "Diagnostic email completed with warnings.")
+            else:
+                messages.error(request, "Diagnostic email did not complete successfully.")
+    else:
+        form = EmailDiagnosticForm(initial={"recipient": request.user.email})
+
+    return render(
+        request,
+        "fileshare/moderation_email_diagnostics.html",
+        {
+            "form": form,
+            "email_settings": email_diagnostic_settings(),
+            "configuration_notes": email_configuration_notes(),
+            "result": result,
         },
     )
 
