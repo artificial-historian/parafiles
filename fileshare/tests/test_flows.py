@@ -764,6 +764,68 @@ class ParafilesFlowTests(TestCase):
         self.assertEqual(created["Location"], next_url)
         self.assertTrue(Folder.objects.filter(owner=user, parent=source, name="Nested").exists())
 
+    def test_deleting_file_removes_related_share(self):
+        user = self.make_uploader()
+        root = Folder.get_root(user)
+        stored_file = self.make_available_file(user, root, name="remove-share.zip")
+        share = PublicShare.objects.create(
+            owner=user, target_type=PublicShare.TargetType.FILE, stored_file=stored_file
+        )
+        self.client.force_login(user)
+
+        response = self.client.post(reverse("file_delete", args=[stored_file.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        stored_file.refresh_from_db()
+        self.assertEqual(stored_file.status, StoredFile.Status.DELETED)
+        self.assertFalse(PublicShare.objects.filter(pk=share.pk).exists())
+        self.assertEqual(self.client.get(reverse("public_file", args=[share.slug])).status_code, 404)
+
+    def test_deleting_folder_deletes_descendant_files_and_related_shares(self):
+        user = self.make_uploader()
+        root = Folder.get_root(user)
+        parent = Folder.objects.create(owner=user, parent=root, name="Parent")
+        child = Folder.objects.create(owner=user, parent=parent, name="Child")
+        parent_file = self.make_available_file(user, parent, name="parent.zip")
+        child_file = self.make_available_file(user, child, name="child.zip")
+        parent_share = PublicShare.objects.create(
+            owner=user, target_type=PublicShare.TargetType.FOLDER, folder=parent
+        )
+        child_share = PublicShare.objects.create(
+            owner=user, target_type=PublicShare.TargetType.FOLDER, folder=child
+        )
+        parent_file_share = PublicShare.objects.create(
+            owner=user, target_type=PublicShare.TargetType.FILE, stored_file=parent_file
+        )
+        child_file_share = PublicShare.objects.create(
+            owner=user, target_type=PublicShare.TargetType.FILE, stored_file=child_file
+        )
+        self.client.force_login(user)
+
+        response = self.client.post(reverse("folder_delete", args=[parent.pk]))
+
+        self.assertEqual(response.status_code, 302)
+        parent.refresh_from_db()
+        child.refresh_from_db()
+        parent_file.refresh_from_db()
+        child_file.refresh_from_db()
+        self.assertTrue(parent.is_deleted)
+        self.assertTrue(child.is_deleted)
+        self.assertEqual(parent_file.status, StoredFile.Status.DELETED)
+        self.assertEqual(child_file.status, StoredFile.Status.DELETED)
+        self.assertFalse(
+            PublicShare.objects.filter(
+                pk__in=[
+                    parent_share.pk,
+                    child_share.pk,
+                    parent_file_share.pk,
+                    child_file_share.pk,
+                ]
+            ).exists()
+        )
+        self.assertEqual(self.client.get(reverse("public_folder", args=[parent_share.slug])).status_code, 404)
+        self.assertEqual(self.client.get(reverse("public_file", args=[child_file_share.slug])).status_code, 404)
+
     def test_uploader_can_edit_file_metadata_and_public_page_shows_it(self):
         user = self.make_uploader()
         stored_file = self.make_available_file(user, Folder.get_root(user), name="plain.zip")
@@ -1285,12 +1347,11 @@ class ParafilesFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         stored_file.refresh_from_db()
-        share.refresh_from_db()
         folder.refresh_from_db()
         child.refresh_from_db()
         self.assertEqual(stored_file.status, StoredFile.Status.DELETED)
         self.assertTrue(not file_path.exists() or file_path.stat().st_size == 0)
-        self.assertFalse(share.is_enabled)
+        self.assertFalse(PublicShare.objects.filter(pk=share.pk).exists())
         self.assertTrue(folder.is_deleted)
         self.assertTrue(child.is_deleted)
 

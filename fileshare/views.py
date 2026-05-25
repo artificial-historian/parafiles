@@ -729,8 +729,8 @@ def folder_delete(request: HttpRequest, folder_id: int) -> HttpResponse:
     fallback = f"{reverse('dashboard')}?folder={folder.parent_id}"
     if folder.is_root:
         raise PermissionDenied("The root folder cannot be deleted.")
-    folder.soft_delete()
-    messages.success(request, "Folder hidden from your dashboard.")
+    folder.delete_tree_contents()
+    messages.success(request, "Folder, contained files, and related shares deleted.")
     return redirect(redirect_target(request, fallback))
 
 

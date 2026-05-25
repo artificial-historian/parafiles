@@ -49,7 +49,7 @@
             <form method="post" action="{% url 'share_toggle' 'folder' folder.pk %}">
               {% csrf_token %}<input type="hidden" name="enabled" value="1"><button>Share</button>
             </form>
-            <form method="post" action="{% url 'folder_delete' folder.pk %}">
+            <form method="post" action="{% url 'folder_delete' folder.pk %}" data-confirm="Delete this folder, its contained files, and related shares?">
               {% csrf_token %}<button class="danger">Delete</button>
             </form>
           </span>
@@ -68,11 +68,7 @@
       <input type="file" id="file-input" required>
       <div class="upload-warning">
         <strong>Before uploading</strong>
-        <p>By uploading content, you confirm that you own it or have the legal right to distribute it; that it does not infringe copyright, trademarks, privacy rights, or applicable law; that it does not contain malware or malicious code; and that you grant Parafiles the limited technical rights necessary to host and distribute the uploaded files.</p>
-        <label class="check-row">
-          <input type="checkbox" id="upload-consent" required>
-          <span>I understand and agree.</span>
-        </label>
+        <p>By uploading a file, you confirm and consent that you own it or have the legal right to distribute it; that it does not infringe copyright, trademarks, privacy rights, or applicable law; that it does not contain malware or malicious code; and that you grant Parafiles the limited technical rights necessary to host and distribute the uploaded file.</p>
       </div>
       <button type="submit">Upload file</button>
       <p id="upload-status" class="muted"></p>
@@ -125,7 +121,7 @@
         <form method="post" action="{% url 'share_toggle' 'file' file.pk %}">
           {% csrf_token %}<input type="hidden" name="enabled" value="1"><button>Share</button>
         </form>
-        <form method="post" action="{% url 'file_delete' file.pk %}">
+        <form method="post" action="{% url 'file_delete' file.pk %}" data-confirm="Delete this file and related shares?">
           {% csrf_token %}<button class="danger">Delete</button>
         </form>
       </div>
@@ -169,7 +165,6 @@ const uploadForm = document.getElementById("upload-form");
 if (!uploadForm) return;
 const uploadStatus = document.getElementById("upload-status");
 const uploadButton = uploadForm.querySelector("button[type=submit]");
-const uploadConsent = document.getElementById("upload-consent");
 const uploadResumePanel = document.getElementById("upload-resume-panel");
 const uploadResumeList = document.getElementById("upload-resume-list");
 const uploadStoragePrefix = "parafiles-upload:";
@@ -195,11 +190,7 @@ function setUploadInProgress(value) {
 
 function updateUploadControls() {
   if (!uploadButton) return;
-  uploadButton.disabled = uploadState.inProgress || (uploadConsent && !uploadConsent.checked);
-}
-
-if (uploadConsent) {
-  uploadConsent.addEventListener("change", updateUploadControls);
+  uploadButton.disabled = uploadState.inProgress;
 }
 
 function uploadPercent(bytesReceived, size) {
@@ -324,12 +315,6 @@ async function loadActiveUploads() {
 
 uploadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (uploadConsent && !uploadConsent.checked) {
-    uploadStatus.textContent = "Confirm upload responsibility first.";
-    uploadConsent.focus();
-    updateUploadControls();
-    return;
-  }
   const file = document.getElementById("file-input").files[0];
   if (!file) return;
   uploadStatus.textContent = "Starting upload...";

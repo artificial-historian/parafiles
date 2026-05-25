@@ -785,7 +785,7 @@ main.page:focus {
   font-size: 0.9rem;
 }
 
-.quick-upload-consent {
+.quick-upload-notice {
   margin-top: 0.9rem;
 }
 
@@ -965,11 +965,6 @@ progress::-moz-progress-bar {
   outline: 3px solid rgb(91 196 232 / 22%);
 }
 
-.quick-drop-zone.is-disabled {
-  cursor: not-allowed;
-  opacity: 0.68;
-}
-
 .quick-drop-zone strong,
 .quick-drop-zone span {
   display: block;
@@ -1015,6 +1010,29 @@ progress::-moz-progress-bar {
 .share-url,
 .hash {
   overflow-wrap: anywhere;
+}
+
+.copy-inline {
+  display: inline;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--sage-dark);
+  padding: 0 0.08rem;
+  font-family: var(--font-display);
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: none;
+  vertical-align: baseline;
+}
+
+.copy-inline:hover {
+  color: var(--coral-dark);
+  text-decoration: none;
 }
 
 .folder-picker {

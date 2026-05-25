@@ -59,7 +59,7 @@
             <div class="share-cell">
               {% if row.share %}
                 <a class="share-url" href="{{ row.share_url }}" target="_blank" rel="noopener">{{ row.share_url }}</a>
-                <button type="button" class="icon-button copy-button" data-copy="{{ row.share_url }}" aria-label="Copy share link" title="Copy share link">⧉</button>
+                <a href="#" class="copy-inline" data-copy="{{ row.share_url }}" aria-label="Copy share link" title="Copy share link">⧉</a>
               {% else %}
                 <span class="muted">Not shared</span>
               {% endif %}
@@ -98,7 +98,7 @@
                   <button type="submit">Move folder</button>
                 </form>
               </details>
-              <form method="post" action="{% url 'folder_delete' row.folder.pk %}" data-confirm="Delete this folder and hide its contents from public browsing?">
+              <form method="post" action="{% url 'folder_delete' row.folder.pk %}" data-confirm="Delete this folder, its contained files, and related shares?">
                 {% csrf_token %}
                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
                 <button type="submit" class="danger">Delete</button>
@@ -116,7 +116,7 @@
             <div class="share-cell">
               {% if row.share %}
                 <a class="share-url" href="{{ row.share_url }}" target="_blank" rel="noopener">{{ row.share_url }}</a>
-                <button type="button" class="icon-button copy-button" data-copy="{{ row.share_url }}" aria-label="Copy share link" title="Copy share link">⧉</button>
+                <a href="#" class="copy-inline" data-copy="{{ row.share_url }}" aria-label="Copy share link" title="Copy share link">⧉</a>
               {% else %}
                 <span class="muted">Not shared</span>
               {% endif %}
@@ -155,7 +155,7 @@
                   <button type="submit">Move file</button>
                 </form>
               </details>
-              <form method="post" action="{% url 'file_delete' row.file.pk %}" data-confirm="Delete this file?">
+              <form method="post" action="{% url 'file_delete' row.file.pk %}" data-confirm="Delete this file and related shares?">
                 {% csrf_token %}
                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
                 <button type="submit" class="danger">Delete</button>
@@ -179,7 +179,7 @@
               <strong>{{ row.name }}</strong>
               <div class="share-cell">
                 <a class="share-url" href="{{ row.url }}" target="_blank" rel="noopener">{{ row.url }}</a>
-                <button type="button" class="icon-button copy-button" data-copy="{{ row.url }}" aria-label="Copy share link" title="Copy share link">⧉</button>
+                <a href="#" class="copy-inline" data-copy="{{ row.url }}" aria-label="Copy share link" title="Copy share link">⧉</a>
               </div>
             </div>
             <div class="actions">

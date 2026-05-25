@@ -190,6 +190,32 @@ class Folder(models.Model):
         self.deleted_at = timezone.now()
         self.save(update_fields=["is_deleted", "deleted_at", "updated_at"])
 
+    def descendants(self) -> list["Folder"]:
+        folders = [self]
+        queue = [self]
+        while queue:
+            current = queue.pop(0)
+            children = list(current.children.all())
+            folders.extend(children)
+            queue.extend(children)
+        return folders
+
+    def delete_tree_contents(self) -> None:
+        folders = self.descendants()
+        folder_ids = [folder.pk for folder in folders]
+        now = timezone.now()
+        PublicShare.objects.filter(
+            Q(folder_id__in=folder_ids) | Q(stored_file__folder_id__in=folder_ids)
+        ).delete()
+        StoredFile.objects.filter(folder_id__in=folder_ids).exclude(
+            status=StoredFile.Status.DELETED
+        ).update(status=StoredFile.Status.DELETED, deleted_at=now, updated_at=now)
+        Folder.objects.filter(pk__in=folder_ids).update(
+            is_deleted=True,
+            deleted_at=now,
+            updated_at=now,
+        )
+
     def restore(self) -> None:
         self.is_deleted = False
         self.deleted_at = None
@@ -260,6 +286,7 @@ class StoredFile(models.Model):
         self.save(update_fields=["status", "disabled_at", "updated_at"])
 
     def soft_delete(self) -> None:
+        PublicShare.objects.filter(stored_file=self).delete()
         self.status = self.Status.DELETED
         self.deleted_at = timezone.now()
         self.save(update_fields=["status", "deleted_at", "updated_at"])

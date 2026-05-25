@@ -275,6 +275,7 @@ def purge_file_bytes(stored_file: StoredFile) -> None:
         pass
     except OSError:
         pass
+    PublicShare.objects.filter(stored_file=stored_file).delete()
     stored_file.status = StoredFile.Status.DELETED
     stored_file.deleted_at = timezone.now()
     stored_file.save(update_fields=["status", "deleted_at", "updated_at"])
@@ -300,5 +301,5 @@ def purge_folder_tree(folder: Folder) -> None:
         purge_file_bytes(stored_file)
     now = timezone.now()
     Folder.objects.filter(pk__in=folder_ids).update(is_deleted=True, deleted_at=now, updated_at=now)
-    PublicShare.objects.filter(folder_id__in=folder_ids).update(is_enabled=False)
-    PublicShare.objects.filter(stored_file__folder_id__in=folder_ids).update(is_enabled=False)
+    PublicShare.objects.filter(folder_id__in=folder_ids).delete()
+    PublicShare.objects.filter(stored_file__folder_id__in=folder_ids).delete()

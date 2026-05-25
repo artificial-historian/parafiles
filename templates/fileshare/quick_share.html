@@ -13,14 +13,9 @@
 
   <form id="quick-share-csrf">{% csrf_token %}</form>
 
-  <section class="upload-warning quick-upload-consent">
+  <section class="upload-warning quick-upload-notice">
     <strong>Before uploading</strong>
-    <p>By uploading content, you confirm that you own it or have the legal right to distribute it; that it does not infringe copyright, trademarks, privacy rights, or applicable law; that it does not contain malware or malicious code; and that you grant Parafiles the limited technical rights necessary to host and distribute the uploaded files.</p>
-    <label class="check-row">
-      <input type="checkbox" id="quick-upload-consent" required>
-      <span>I understand and agree.</span>
-    </label>
-    <p id="quick-consent-status" class="muted"></p>
+    <p>By uploading files, you confirm and consent that you own them or have the legal right to distribute them; that they do not infringe copyright, trademarks, privacy rights, or applicable law; that they do not contain malware or malicious code; and that you grant Parafiles the limited technical rights necessary to host and distribute the uploaded files.</p>
   </section>
 
   <section id="drop-zone" class="quick-drop-zone" tabindex="0">
@@ -34,9 +29,7 @@
   <section id="queue-panel" class="quick-queue" hidden>
     <div class="split">
       <h2>Queue</h2>
-      <button id="copy-all-button" type="button" class="copy-all-button" hidden>
-        <span aria-hidden="true">⧉</span> Copy all links
-      </button>
+      <button id="copy-all-button" type="button" class="copy-all-button" hidden>Copy all links</button>
     </div>
     <div id="queue-list" class="quick-queue-list"></div>
   </section>
@@ -81,8 +74,6 @@ const queuePanel = document.getElementById("queue-panel");
 const queueList = document.getElementById("queue-list");
 const copyAllButton = document.getElementById("copy-all-button");
 const sessionWarning = document.getElementById("session-warning");
-const uploadConsent = document.getElementById("quick-upload-consent");
-const consentStatus = document.getElementById("quick-consent-status");
 const folderDialog = document.getElementById("folder-dialog");
 const folderDialogFile = document.getElementById("folder-dialog-file");
 const folderDialogClose = document.getElementById("folder-dialog-close");
@@ -94,26 +85,6 @@ const folderCreateName = document.getElementById("folder-create-name");
 const rows = new Map();
 let folders = [];
 let activeFolderRowId = null;
-
-function updateConsentState() {
-  const allowed = !uploadConsent || uploadConsent.checked;
-  fileInput.disabled = !allowed;
-  dropZone.classList.toggle("is-disabled", !allowed);
-  dropZone.setAttribute("aria-disabled", allowed ? "false" : "true");
-  if (allowed && consentStatus) consentStatus.textContent = "";
-}
-
-function requireUploadConsent() {
-  if (!uploadConsent || uploadConsent.checked) return true;
-  if (consentStatus) consentStatus.textContent = "Confirm upload responsibility first.";
-  uploadConsent.focus();
-  updateConsentState();
-  return false;
-}
-
-if (uploadConsent) {
-  uploadConsent.addEventListener("change", updateConsentState);
-}
 
 function uploadFolderUrl(uploadId) {
   return quickShareUrls.uploadFolder.replace("00000000-0000-0000-0000-000000000000", uploadId);
@@ -179,7 +150,7 @@ function renderRow(row) {
   const shareLink = row.shareUrl ? `
     <div class="quick-share-link">
       <a href="${row.shareUrl}" target="_blank" rel="noopener">${row.shareUrl}</a>
-      <button type="button" class="icon-button" data-action="copy" data-row-id="${row.id}" title="Copy link" aria-label="Copy link">⧉</button>
+      <a href="#" class="copy-inline" data-action="copy" data-row-id="${row.id}" title="Copy link" aria-label="Copy link">⧉</a>
     </div>
   ` : "";
   const pauseResume = canResume(row)
@@ -360,7 +331,6 @@ async function uploadFile(row) {
 }
 
 function enqueueFiles(fileList) {
-  if (!requireUploadConsent()) return;
   const files = [...fileList].filter((file) => file.size > 0);
   for (const file of files) {
     const row = {
@@ -485,18 +455,19 @@ async function openFolderDialog(row) {
 }
 
 queueList.addEventListener("click", async (event) => {
-  const button = event.target.closest("button[data-action]");
-  if (!button) return;
-  const row = rows.get(button.dataset.rowId);
+  const actionControl = event.target.closest("[data-action]");
+  if (!actionControl) return;
+  event.preventDefault();
+  const row = rows.get(actionControl.dataset.rowId);
   if (!row) return;
-  if (button.dataset.action === "pause") pauseRow(row);
-  if (button.dataset.action === "resume") resumeRow(row);
-  if (button.dataset.action === "cancel") await cancelRow(row);
-  if (button.dataset.action === "folder") await openFolderDialog(row);
-  if (button.dataset.action === "copy" && row.shareUrl) {
+  if (actionControl.dataset.action === "pause") pauseRow(row);
+  if (actionControl.dataset.action === "resume") resumeRow(row);
+  if (actionControl.dataset.action === "cancel") await cancelRow(row);
+  if (actionControl.dataset.action === "folder") await openFolderDialog(row);
+  if (actionControl.dataset.action === "copy" && row.shareUrl) {
     await copyText(row.shareUrl);
-    button.textContent = "Copied";
-    setTimeout(() => { button.textContent = "⧉"; }, 1200);
+    actionControl.textContent = "Copied";
+    setTimeout(() => { actionControl.textContent = "⧉"; }, 1200);
   }
 });
 
@@ -534,17 +505,15 @@ copyAllButton.addEventListener("click", async () => {
   const urls = [...rows.values()].map((row) => row.shareUrl).filter(Boolean);
   await copyText(urls.join("\n"));
   copyAllButton.textContent = "Copied";
-  setTimeout(() => { copyAllButton.innerHTML = '<span aria-hidden="true">⧉</span> Copy all links'; }, 1200);
+  setTimeout(() => { copyAllButton.textContent = "Copy all links"; }, 1200);
 });
 
 dropZone.addEventListener("click", () => {
-  if (!requireUploadConsent()) return;
   fileInput.click();
 });
 dropZone.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") {
     event.preventDefault();
-    if (!requireUploadConsent()) return;
     fileInput.click();
   }
 });
@@ -558,14 +527,12 @@ dropZone.addEventListener("dragleave", () => {
 dropZone.addEventListener("drop", (event) => {
   event.preventDefault();
   dropZone.classList.remove("dragover");
-  if (!requireUploadConsent()) return;
   enqueueFiles(event.dataTransfer.files);
 });
 fileInput.addEventListener("change", () => {
   enqueueFiles(fileInput.files);
   fileInput.value = "";
 });
-updateConsentState();
 })();
 </script>
 {% endblock %}
