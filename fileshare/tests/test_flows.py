@@ -95,6 +95,7 @@ class ParafilesFlowTests(TestCase):
                 "email": "creator@example.test",
                 "password1": "A-very-long-test-password-123",
                 "password2": "A-very-long-test-password-123",
+                "alpha_notice": "on",
             },
         )
         self.assertEqual(response.status_code, 302)
@@ -103,6 +104,23 @@ class ParafilesFlowTests(TestCase):
         self.assertTrue(Folder.objects.filter(owner=user, parent=None, name="").exists())
         invitation.refresh_from_db()
         self.assertIsNotNone(invitation.accepted_at)
+
+    def test_invite_registration_requires_alpha_notice_acknowledgement(self):
+        invitation = Invitation.objects.create(expires_at=timezone.now() + timedelta(days=1))
+
+        response = self.client.post(
+            reverse("register_invite", args=[invitation.token]),
+            {
+                "username": "creator",
+                "email": "creator@example.test",
+                "password1": "A-very-long-test-password-123",
+                "password2": "A-very-long-test-password-123",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Important Alpha Notice")
+        self.assertFalse(User.objects.filter(username="creator").exists())
 
     @override_settings(
         EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
@@ -289,6 +307,43 @@ class ParafilesFlowTests(TestCase):
         self.assertEqual(status.json()["bytes_received"], len(first_part))
         self.assertEqual(status.json()["status"], "uploading")
         self.assertEqual(wrong_token.status_code, 404)
+
+    def test_active_uploads_list_exposes_resumable_sessions(self):
+        user = self.make_uploader()
+        root = Folder.get_root(user)
+        session = UploadSession.objects.create(
+            owner=user,
+            folder=root,
+            original_filename="resume-me.zip",
+            size=100,
+            content_type="application/zip",
+            temp_path="resume-me.part",
+            bytes_received=40,
+            status=UploadSession.Status.UPLOADING,
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+        UploadSession.objects.create(
+            owner=user,
+            folder=root,
+            original_filename="done.zip",
+            size=10,
+            content_type="application/zip",
+            temp_path="done.part",
+            bytes_received=10,
+            status=UploadSession.Status.FINALIZED,
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("upload_active"), HTTP_ACCEPT="application/json")
+
+        self.assertEqual(response.status_code, 200)
+        uploads = response.json()["uploads"]
+        self.assertEqual(len(uploads), 1)
+        self.assertEqual(uploads[0]["upload_id"], str(session.upload_id))
+        self.assertEqual(uploads[0]["filename"], "resume-me.zip")
+        self.assertEqual(uploads[0]["bytes_received"], 40)
+        self.assertEqual(uploads[0]["folder_path"], "/")
 
     def test_cleanup_expired_upload_session_removes_staged_file(self):
         user = self.make_uploader()
@@ -580,8 +635,50 @@ class ParafilesFlowTests(TestCase):
         response = self.client.get(reverse("public_folder", args=[share.slug]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, public_file.original_filename)
+        self.assertContains(response, f"Shared by {user.username}")
+        self.assertContains(
+            response, reverse("public_folder_file", args=[share.slug, public_file.pk])
+        )
         self.assertNotContains(response, "private.zip")
         self.assertNotContains(response, "Parent Secret")
+
+    def test_folder_shared_file_opens_file_page_and_reports_file(self):
+        user = self.make_uploader(username="folderowner")
+        root = Folder.get_root(user)
+        shared = Folder.objects.create(owner=user, parent=root, name="Published")
+        stored_file = self.make_available_file(user, shared, name="inside.zip")
+        share = PublicShare.objects.create(
+            owner=user,
+            target_type=PublicShare.TargetType.FOLDER,
+            folder=shared,
+        )
+
+        file_page = self.client.get(
+            reverse("public_folder_file", args=[share.slug, stored_file.pk])
+        )
+        self.assertEqual(file_page.status_code, 200)
+        self.assertContains(file_page, "inside.zip")
+        self.assertContains(file_page, f"Shared by {user.username}")
+        self.assertContains(
+            file_page, reverse("prepare_download_file", args=[share.slug, stored_file.pk])
+        )
+        self.assertContains(
+            file_page, reverse("report_share_file", args=[share.slug, stored_file.pk])
+        )
+
+        report = self.client.post(
+            reverse("report_share_file", args=[share.slug, stored_file.pk]),
+            {
+                "category": AbuseReport.Category.MALWARE,
+                "message": "This individual file appears unsafe.",
+            },
+        )
+
+        self.assertEqual(report.status_code, 302)
+        abuse_report = AbuseReport.objects.get()
+        self.assertEqual(abuse_report.share, share)
+        self.assertEqual(abuse_report.stored_file, stored_file)
+        self.assertIsNone(abuse_report.folder)
 
     def test_hidden_file_public_link_returns_not_found(self):
         user = self.make_uploader()
@@ -1028,6 +1125,48 @@ class ParafilesFlowTests(TestCase):
         self.assertEqual(disabled_shares.status_code, 302)
         share.refresh_from_db()
         self.assertFalse(share.is_enabled)
+
+    def test_staff_can_browse_user_files_with_stats_and_share_links(self):
+        uploader = self.make_uploader(username="librarycreator")
+        staff = User.objects.create_user(
+            username="librarystaff", password="pass", is_staff=True, is_uploader=True
+        )
+        root = Folder.get_root(uploader)
+        folder = Folder.objects.create(owner=uploader, parent=root, name="Library")
+        stored_file = self.make_available_file(uploader, folder, name="library.zip")
+        stored_file.download_count = 3
+        stored_file.save(update_fields=["download_count"])
+        share = PublicShare.objects.create(
+            owner=uploader,
+            target_type=PublicShare.TargetType.FOLDER,
+            folder=folder,
+        )
+        DownloadEvent.objects.create(
+            stored_file=stored_file,
+            share=share,
+            ip_hash="ip",
+            user_agent_hash="ua",
+            bytes_served=stored_file.size,
+            outcome=DownloadEvent.Outcome.ALLOWED,
+        )
+        self.client.force_login(staff)
+
+        users = self.client.get(reverse("moderation_users"), {"q": "librarycreator"})
+        self.assertEqual(users.status_code, 200)
+        self.assertContains(users, reverse("moderation_user_files", args=[uploader.pk]))
+
+        response = self.client.get(reverse("moderation_user_files", args=[uploader.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "librarycreator")
+        self.assertContains(response, "/Library")
+        self.assertContains(response, "library.zip")
+        self.assertContains(response, "3 total")
+        self.assertContains(response, "1 allowed events")
+        self.assertContains(response, reverse("public_folder", args=[share.slug]))
+        self.assertContains(
+            response, reverse("public_folder_file", args=[share.slug, stored_file.pk])
+        )
 
     def test_staff_cannot_suspend_self(self):
         staff = User.objects.create_user(

@@ -475,8 +475,45 @@ def upload_status(request: HttpRequest, upload_id) -> JsonResponse:
             "status": session.status,
             "bytes_received": session.bytes_received,
             "size": session.size,
+            "filename": session.original_filename,
+            "folder_id": session.folder_id,
             "expires_at": session.expires_at.isoformat(),
             "finalized_file_id": session.finalized_file_id,
+        }
+    )
+
+
+@login_required
+@uploader_required
+def upload_active(request: HttpRequest) -> JsonResponse:
+    sessions = (
+        UploadSession.objects.filter(
+            owner=request.user,
+            status__in=[UploadSession.Status.INIT, UploadSession.Status.UPLOADING],
+            expires_at__gt=timezone.now(),
+        )
+        .select_related("folder")
+        .order_by("-created_at")[:20]
+    )
+    return JsonResponse(
+        {
+            "uploads": [
+                {
+                    "upload_id": str(session.upload_id),
+                    "token": session.token,
+                    "filename": session.original_filename,
+                    "size": session.size,
+                    "bytes_received": session.bytes_received,
+                    "status": session.status,
+                    "folder_id": session.folder_id,
+                    "folder_path": session.folder.logical_path(),
+                    "chunk_size": 8 * 1024 * 1024,
+                    "chunk_url": reverse("upload_chunk", args=[session.upload_id]),
+                    "status_url": reverse("upload_status", args=[session.upload_id]),
+                    "finalize_url": reverse("upload_finalize", args=[session.upload_id]),
+                }
+                for session in sessions
+            ]
         }
     )
 
@@ -625,7 +662,13 @@ def public_file(request: HttpRequest, slug: str) -> HttpResponse:
     return render(
         request,
         "fileshare/public_file.html",
-        {"share": share, "stored_file": stored_file, "report_form": AbuseReportForm()},
+        {
+            "share": share,
+            "stored_file": stored_file,
+            "download_url": reverse("prepare_download", args=[share.slug]),
+            "report_url": reverse("report_share", args=[share.slug]),
+            "report_form": AbuseReportForm(),
+        },
     )
 
 
@@ -658,24 +701,59 @@ def public_folder(request: HttpRequest, slug: str) -> HttpResponse:
     return render(
         request,
         "fileshare/public_folder.html",
-        {"share": share, "folder": folder, "tree": folder_tree(folder), "report_form": AbuseReportForm()},
+        {
+            "share": share,
+            "folder": folder,
+            "tree": folder_tree(folder),
+            "report_form": AbuseReportForm(),
+        },
+    )
+
+
+def public_folder_file(request: HttpRequest, slug: str, file_id: int) -> HttpResponse:
+    limited = public_rate_limit_or_429(request)
+    if limited:
+        return limited
+    share = live_share_or_404(slug, PublicShare.TargetType.FOLDER)
+    stored_file = get_object_or_404(StoredFile.objects.select_related("folder"), pk=file_id)
+    if not stored_file.is_publicly_downloadable or not file_belongs_to_share(stored_file, share):
+        raise Http404
+    return render(
+        request,
+        "fileshare/public_file.html",
+        {
+            "share": share,
+            "stored_file": stored_file,
+            "download_url": reverse("prepare_download_file", args=[share.slug, stored_file.pk]),
+            "report_url": reverse("report_share_file", args=[share.slug, stored_file.pk]),
+            "report_form": AbuseReportForm(),
+            "containing_folder": share.folder,
+        },
     )
 
 
 @require_POST
-def report_share(request: HttpRequest, slug: str) -> HttpResponse:
+def report_share(request: HttpRequest, slug: str, file_id: int | None = None) -> HttpResponse:
     decision = check_report(request)
     if not decision.allowed:
         response = HttpResponse("Too many reports.", status=429)
         response["Retry-After"] = str(decision.retry_after)
         return response
     share = live_share_or_404(slug)
+    reported_file = None
+    if file_id is not None:
+        reported_file = get_object_or_404(StoredFile.objects.select_related("folder"), pk=file_id)
+        if (
+            not reported_file.is_publicly_downloadable
+            or not file_belongs_to_share(reported_file, share)
+        ):
+            raise Http404
     form = AbuseReportForm(request.POST)
     if form.is_valid():
         AbuseReport.objects.create(
             share=share,
-            stored_file=share.stored_file,
-            folder=share.folder,
+            stored_file=reported_file or share.stored_file,
+            folder=None if reported_file else share.folder,
             category=form.cleaned_data["category"],
             message=form.cleaned_data["message"],
             contact_email=form.cleaned_data.get("contact_email", ""),
@@ -683,10 +761,21 @@ def report_share(request: HttpRequest, slug: str) -> HttpResponse:
             user_agent_hash=request_user_agent_hash(request),
         )
         return redirect("report_thanks")
-    target = "fileshare/public_file.html" if share.target_type == PublicShare.TargetType.FILE else "fileshare/public_folder.html"
+    if share.target_type == PublicShare.TargetType.FILE or reported_file:
+        target = "fileshare/public_file.html"
+    else:
+        target = "fileshare/public_folder.html"
     context = {"share": share, "report_form": form}
-    if share.stored_file_id:
+    if reported_file:
+        context["stored_file"] = reported_file
+        context["download_url"] = reverse(
+            "prepare_download_file", args=[share.slug, reported_file.pk]
+        )
+        context["report_url"] = reverse("report_share_file", args=[share.slug, reported_file.pk])
+    elif share.stored_file_id:
         context["stored_file"] = share.stored_file
+        context["download_url"] = reverse("prepare_download", args=[share.slug])
+        context["report_url"] = reverse("report_share", args=[share.slug])
     else:
         context["folder"] = share.folder
         context["tree"] = folder_tree(share.folder)
@@ -714,7 +803,11 @@ def prepare_download(request: HttpRequest, slug: str, file_id: int | None = None
         stored_file = share.stored_file
     else:
         stored_file = get_object_or_404(StoredFile, pk=file_id)
-    if not stored_file or not stored_file.is_publicly_downloadable or not file_belongs_to_share(stored_file, share):
+    if (
+        not stored_file
+        or not stored_file.is_publicly_downloadable
+        or not file_belongs_to_share(stored_file, share)
+    ):
         raise Http404
 
     decision = check_download_request(request, stored_file.size)
@@ -1004,6 +1097,85 @@ def moderation_users(request: HttpRequest) -> HttpResponse:
             "users": users,
         },
     )
+
+
+def share_public_url(request: HttpRequest, share: PublicShare) -> str:
+    if share.target_type == PublicShare.TargetType.FILE:
+        path = reverse("public_file", args=[share.slug])
+    else:
+        path = reverse("public_folder", args=[share.slug])
+    return request.build_absolute_uri(path)
+
+
+@staff_member_required
+def moderation_user_files(request: HttpRequest, user_id: int) -> HttpResponse:
+    target_user = get_object_or_404(User, pk=user_id)
+    folders = list(
+        Folder.objects.filter(owner=target_user)
+        .select_related("parent")
+        .prefetch_related("public_shares")
+        .annotate(
+            direct_file_count=Count("files", filter=~Q(files__status=StoredFile.Status.DELETED)),
+            direct_download_count=Sum(
+                "files__download_count", filter=~Q(files__status=StoredFile.Status.DELETED)
+            ),
+        )
+        .order_by("parent_id", "name", "id")
+    )
+    files = list(
+        StoredFile.objects.filter(owner=target_user)
+        .exclude(status=StoredFile.Status.DELETED)
+        .select_related("folder")
+        .prefetch_related("public_shares")
+        .annotate(
+            allowed_download_events=Count(
+                "download_events",
+                filter=Q(download_events__outcome=DownloadEvent.Outcome.ALLOWED),
+            )
+        )
+        .order_by("folder__name", "original_filename")
+    )
+    folder_shares = list(
+        PublicShare.objects.filter(
+            owner=target_user,
+            target_type=PublicShare.TargetType.FOLDER,
+            is_enabled=True,
+        ).select_related("folder")
+    )
+    for folder in folders:
+        folder.active_links = [
+            share_public_url(request, share)
+            for share in folder.public_shares.all()
+            if share.is_live
+        ]
+    for stored_file in files:
+        direct_links = [
+            share_public_url(request, share)
+            for share in stored_file.public_shares.all()
+            if share.is_live
+        ]
+        inherited_links = [
+            request.build_absolute_uri(
+                reverse("public_folder_file", args=[share.slug, stored_file.pk])
+            )
+            for share in folder_shares
+            if share.folder and share.is_live and share.folder.contains(stored_file.folder)
+        ]
+        stored_file.active_links = direct_links + inherited_links
+
+    context = {
+        "account": target_user,
+        "folders": folders,
+        "files": files,
+        "used_bytes": storage_used(target_user),
+        "file_count": file_count(target_user),
+        "folder_count": Folder.objects.filter(owner=target_user, is_deleted=False).count(),
+        "download_count": DownloadEvent.objects.filter(
+            stored_file__owner=target_user,
+            outcome=DownloadEvent.Outcome.ALLOWED,
+        ).count(),
+    }
+    return render(request, "fileshare/moderation_user_files.html", context)
 
 
 @staff_member_required

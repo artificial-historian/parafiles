@@ -18,6 +18,7 @@ urlpatterns = [
     path("dashboard/files/<int:file_id>/move/", views.file_move, name="file_move"),
     path("dashboard/files/<int:file_id>/delete/", views.file_delete, name="file_delete"),
     path("dashboard/uploads/start/", views.upload_start, name="upload_start"),
+    path("dashboard/uploads/active/", views.upload_active, name="upload_active"),
     path("dashboard/uploads/<uuid:upload_id>/chunk/", views.upload_chunk, name="upload_chunk"),
     path("dashboard/uploads/<uuid:upload_id>/finalize/", views.upload_finalize, name="upload_finalize"),
     path(
@@ -29,9 +30,11 @@ urlpatterns = [
     path("dashboard/share/<int:share_id>/update/", views.share_update, name="share_update"),
     path("dashboard/uploads/<uuid:upload_id>/status/", views.upload_status, name="upload_status"),
     path("file/<str:slug>/", views.public_file, name="public_file"),
+    path("folder/<str:slug>/file/<int:file_id>/", views.public_folder_file, name="public_folder_file"),
     path("folder/<str:slug>/", views.public_folder, name="public_folder"),
-    path("report/<str:slug>/", views.report_share, name="report_share"),
     path("report/thanks/", views.report_thanks, name="report_thanks"),
+    path("report/<str:slug>/<int:file_id>/", views.report_share, name="report_share_file"),
+    path("report/<str:slug>/", views.report_share, name="report_share"),
     path("download/prepare/<str:slug>/", views.prepare_download, name="prepare_download"),
     path(
         "download/prepare/<str:slug>/<int:file_id>/",
@@ -58,6 +61,11 @@ urlpatterns = [
         name="moderation_invitation_resend",
     ),
     path("moderation/users/", views.moderation_users, name="moderation_users"),
+    path(
+        "moderation/users/<int:user_id>/files/",
+        views.moderation_user_files,
+        name="moderation_user_files",
+    ),
     path(
         "moderation/users/<int:user_id>/quota/",
         views.moderation_user_quota,

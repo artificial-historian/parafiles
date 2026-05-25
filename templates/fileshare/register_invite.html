@@ -4,10 +4,63 @@
 {% block content %}
 <section class="narrow">
   <h1>Create Uploader Account</h1>
-  <form method="post" class="stack">
+  <form method="post" class="stack" id="registration-form">
     {% csrf_token %}
-    {{ form.as_p }}
+    <dialog class="modal" id="alpha-notice" open>
+      <div class="modal-content">
+        <h2>Important Alpha Notice</h2>
+        <p>Parafiles is currently an MVP alpha being tested with invited users. Do not rely on it for secure, private, permanent, or highly available storage.</p>
+        <p>Accounts, uploads, share links, metadata, and activity may be changed, disabled, or deleted without notice during testing, including during resets.</p>
+        <p>The interface and workflows are unfinished. Please report major bugs, failed uploads or downloads, data loss, access problems, or security concerns. Cosmetic feedback is welcome, but it is not the focus of this test.</p>
+        <p>The site operator can access uploaded files and related metadata for operations, moderation, and debugging. Upload only files you have the right to share and that you are comfortable making available through this test service.</p>
+        <p>Do not upload sensitive personal data, private credentials, illegal material, malware, or anything you would not want reviewed by the operator or removed during testing.</p>
+        <label class="check-row">
+          {{ form.alpha_notice }}
+          <span>{{ form.alpha_notice.label }}</span>
+        </label>
+        {% if form.alpha_notice.errors %}<div class="message error">{{ form.alpha_notice.errors }}</div>{% endif %}
+        <button type="button" id="alpha-continue">Continue</button>
+      </div>
+    </dialog>
+    <p>
+      {{ form.username.label_tag }}
+      {{ form.username }}
+      {{ form.username.errors }}
+    </p>
+    <p>
+      {{ form.email.label_tag }}
+      {{ form.email }}
+      {{ form.email.errors }}
+    </p>
+    <p>
+      {{ form.password1.label_tag }}
+      {{ form.password1 }}
+      {{ form.password1.errors }}
+    </p>
+    <p>
+      {{ form.password2.label_tag }}
+      {{ form.password2 }}
+      {{ form.password2.errors }}
+    </p>
+    {{ form.non_field_errors }}
     <button type="submit">Create account</button>
   </form>
 </section>
+<script>
+const alphaNotice = document.getElementById("alpha-notice");
+const alphaContinue = document.getElementById("alpha-continue");
+const alphaCheckbox = document.getElementById("id_alpha_notice");
+
+function updateAlphaContinue() {
+  alphaContinue.disabled = !alphaCheckbox.checked;
+}
+
+alphaCheckbox.addEventListener("change", updateAlphaContinue);
+alphaContinue.addEventListener("click", () => {
+  if (alphaCheckbox.checked) {
+    alphaNotice.close();
+  }
+});
+updateAlphaContinue();
+</script>
 {% endblock %}

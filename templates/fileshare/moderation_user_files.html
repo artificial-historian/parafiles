@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ account.username }} Files - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>{{ account.username }}</h1>
+    <p class="muted">Files, folders, download stats, and public links.</p>
+  </div>
+  <div class="actions">
+    <a href="{% url 'moderation_users' %}">Back to users</a>
+    <a href="{% url 'moderation_user_quota' account.pk %}">Quota</a>
+    <a href="{% url 'moderation_action_log' %}?q={{ account.username }}">Audit log</a>
+  </div>
+</section>
+
+<section class="metrics">
+  <div class="metric"><span>Storage used</span><strong>{{ used_bytes|filesizeformat }}</strong><small>active files</small></div>
+  <div class="metric"><span>Files</span><strong>{{ file_count }}</strong><small>not deleted</small></div>
+  <div class="metric"><span>Folders</span><strong>{{ folder_count }}</strong><small>visible</small></div>
+  <div class="metric"><span>Downloads</span><strong>{{ download_count }}</strong><small>allowed events</small></div>
+</section>
+
+<section class="panel">
+  <h2>Folders</h2>
+  <div class="table user-folders-table">
+    <div class="table-head">Path</div>
+    <div class="table-head">State</div>
+    <div class="table-head">Files</div>
+    <div class="table-head">Downloads</div>
+    <div class="table-head">Shared Links</div>
+    {% for folder in folders %}
+      <div>{{ folder.logical_path }}</div>
+      <div>{% if folder.is_deleted %}<span class="status hidden">Hidden</span>{% else %}<span class="status ok">Visible</span>{% endif %}</div>
+      <div>{{ folder.direct_file_count }}</div>
+      <div>{{ folder.direct_download_count|default:0 }}</div>
+      <div>
+        {% for link in folder.active_links %}
+          <p><a href="{{ link }}">{{ link }}</a></p>
+        {% empty %}
+          <span class="muted">Not directly shared</span>
+        {% endfor %}
+      </div>
+    {% empty %}
+      <div class="full muted">No folders.</div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Files</h2>
+  <div class="table user-files-table">
+    <div class="table-head">File</div>
+    <div class="table-head">Folder</div>
+    <div class="table-head">Status</div>
+    <div class="table-head">Downloads</div>
+    <div class="table-head">Shared Links</div>
+    {% for file in files %}
+      <div>
+        {{ file.original_filename }}
+        <p class="muted">{{ file.size|filesizeformat }}</p>
+      </div>
+      <div>{{ file.folder.logical_path }}</div>
+      <div><span class="status {{ file.status }}">{{ file.get_status_display }}</span></div>
+      <div>
+        <p>{{ file.download_count }} total</p>
+        <p class="muted">{{ file.allowed_download_events }} allowed events</p>
+      </div>
+      <div>
+        {% for link in file.active_links %}
+          <p><a href="{{ link }}">{{ link }}</a></p>
+        {% empty %}
+          <span class="muted">Not shared</span>
+        {% endfor %}
+      </div>
+    {% empty %}
+      <div class="full muted">No files.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

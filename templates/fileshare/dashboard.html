@@ -69,6 +69,10 @@
       <button type="submit">Upload file</button>
       <p id="upload-status" class="muted"></p>
     </form>
+    <div id="upload-resume-panel" class="resume-panel" hidden>
+      <h3>Interrupted Uploads</h3>
+      <div id="upload-resume-list" class="list"></div>
+    </div>
   </div>
 </section>
 
@@ -154,6 +158,136 @@
 <script>
 const uploadForm = document.getElementById("upload-form");
 const uploadStatus = document.getElementById("upload-status");
+const uploadButton = uploadForm.querySelector("button[type=submit]");
+const uploadResumePanel = document.getElementById("upload-resume-panel");
+const uploadResumeList = document.getElementById("upload-resume-list");
+const uploadStoragePrefix = "parafiles-upload:";
+let uploadInProgress = false;
+
+function uploadPercent(bytesReceived, size) {
+  if (!size) return 0;
+  return Math.min(100, Math.floor((bytesReceived / size) * 100));
+}
+
+function uploadDisplayName(upload) {
+  return upload.filename || upload.original_filename || "Unnamed upload";
+}
+
+function readStoredUploads() {
+  const uploads = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (!key || !key.startsWith(uploadStoragePrefix)) continue;
+    try {
+      const upload = JSON.parse(localStorage.getItem(key));
+      upload.storage_key = key;
+      const parts = key.slice(uploadStoragePrefix.length).split(":");
+      upload.folder_id = upload.folder_id || parts[0];
+      upload.filename = upload.filename || parts[1];
+      upload.size = upload.size || Number(parts[2]);
+      upload.last_modified = upload.last_modified || parts[3];
+      uploads.push(upload);
+    } catch (error) {
+      localStorage.removeItem(key);
+    }
+  }
+  return uploads;
+}
+
+function storedUploadKey(upload) {
+  return `${uploadStoragePrefix}${upload.folder_id || "unknown"}:${upload.filename}:${upload.size}:${upload.last_modified || "unknown"}`;
+}
+
+function rememberUpload(upload) {
+  if (!upload.filename || !upload.size) return;
+  localStorage.setItem(storedUploadKey(upload), JSON.stringify(upload));
+}
+
+function forgetUpload(upload) {
+  if (upload.storage_key) {
+    localStorage.removeItem(upload.storage_key);
+  }
+  localStorage.removeItem(storedUploadKey(upload));
+}
+
+function findSavedUploadForFile(file) {
+  return readStoredUploads().find((upload) => (
+    upload.filename === file.name &&
+    Number(upload.size) === Number(file.size) &&
+    upload.last_modified &&
+    Number(upload.last_modified) === Number(file.lastModified)
+  ));
+}
+
+async function refreshUploadStatus(upload) {
+  const response = await fetch(upload.status_url, {
+    headers: { "Accept": "application/json", "X-Upload-Token": upload.token },
+  });
+  if (!response.ok) return null;
+  const status = await response.json();
+  return { ...upload, ...status, filename: status.filename || upload.filename };
+}
+
+function renderResumeUploads(uploads) {
+  uploadResumeList.innerHTML = "";
+  const activeUploads = uploads.filter((upload) => upload.status === "uploading" || upload.status === "init");
+  uploadResumePanel.hidden = activeUploads.length === 0;
+  for (const upload of activeUploads) {
+    const item = document.createElement("div");
+    item.className = "list-row";
+    const percent = uploadPercent(upload.bytes_received || 0, upload.size || 0);
+    item.innerHTML = `
+      <strong></strong>
+      <p class="muted"></p>
+      <progress max="100" value="${percent}"></progress>
+    `;
+    item.querySelector("strong").textContent = uploadDisplayName(upload);
+    item.querySelector("p").textContent = `${percent}% uploaded. Select the same local file and upload again to resume.`;
+    uploadResumeList.appendChild(item);
+  }
+}
+
+async function loadActiveUploads() {
+  const uploadsById = new Map();
+  for (const upload of readStoredUploads()) {
+    if (upload.upload_id) uploadsById.set(upload.upload_id, upload);
+  }
+  try {
+    const response = await fetch("{% url 'upload_active' %}", { headers: { "Accept": "application/json" } });
+    if (response.ok) {
+      const payload = await response.json();
+      for (const upload of payload.uploads || []) {
+        const existing = uploadsById.get(upload.upload_id) || {};
+        uploadsById.set(upload.upload_id, { ...existing, ...upload });
+      }
+    }
+  } catch (error) {
+    // Local storage entries still give the user a path to resume if the status list fails.
+  }
+
+  const activeUploads = [];
+  for (const upload of uploadsById.values()) {
+    try {
+      const refreshed = upload.status_url && upload.token ? await refreshUploadStatus(upload) : upload;
+      if (!refreshed || refreshed.status === "finalized" || refreshed.status === "failed" || refreshed.status === "expired") {
+        forgetUpload(upload);
+        continue;
+      }
+      rememberUpload(refreshed);
+      activeUploads.push(refreshed);
+    } catch (error) {
+      activeUploads.push(upload);
+    }
+  }
+  renderResumeUploads(activeUploads);
+}
+
+window.addEventListener("beforeunload", (event) => {
+  if (!uploadInProgress) return;
+  event.preventDefault();
+  event.returnValue = "";
+});
+
 uploadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const file = document.getElementById("file-input").files[0];
@@ -161,24 +295,23 @@ uploadForm.addEventListener("submit", async (event) => {
   uploadStatus.textContent = "Starting upload...";
   const csrf = uploadForm.querySelector("input[name=csrfmiddlewaretoken]").value;
   const folderId = uploadForm.querySelector("input[name=folder_id]").value;
-  const uploadKey = `parafiles-upload:${folderId}:${file.name}:${file.size}:${file.lastModified}`;
   let startedJson = null;
-  const savedUpload = localStorage.getItem(uploadKey);
+  const savedUpload = findSavedUploadForFile(file);
   if (savedUpload) {
     try {
-      const candidate = JSON.parse(savedUpload);
+      const candidate = savedUpload;
       const status = await fetch(candidate.status_url, { headers: { "Accept": "application/json", "X-Upload-Token": candidate.token } });
       if (status.ok) {
         const statusJson = await status.json();
         if (statusJson.status === "uploading" || statusJson.status === "init") {
-          startedJson = { ...candidate, bytes_received: statusJson.bytes_received };
+          startedJson = { ...candidate, ...statusJson };
           uploadStatus.textContent = "Resuming upload...";
         } else {
-          localStorage.removeItem(uploadKey);
+          forgetUpload(candidate);
         }
       }
     } catch (error) {
-      localStorage.removeItem(uploadKey);
+      forgetUpload(savedUpload);
     }
   }
   if (!startedJson) {
@@ -194,38 +327,57 @@ uploadForm.addEventListener("submit", async (event) => {
       uploadStatus.textContent = "Upload rejected.";
       return;
     }
-    localStorage.setItem(uploadKey, JSON.stringify(startedJson));
+    startedJson = {
+      ...startedJson,
+      filename: file.name,
+      size: file.size,
+      last_modified: file.lastModified,
+      folder_id: folderId,
+    };
+    rememberUpload(startedJson);
   }
   const chunkSize = startedJson.chunk_size || (8 * 1024 * 1024);
   let offset = startedJson.bytes_received || 0;
-  while (offset < file.size) {
-    uploadStatus.textContent = `Uploading ${Math.floor((offset / file.size) * 100)}%...`;
-    const chunk = new FormData();
-    chunk.append("csrfmiddlewaretoken", csrf);
-    chunk.append("token", startedJson.token);
-    chunk.append("offset", offset);
-    chunk.append("chunk", file.slice(offset, Math.min(offset + chunkSize, file.size)));
-    const uploaded = await fetch(startedJson.chunk_url, { method: "POST", body: chunk, headers: { "Accept": "application/json" } });
-    const uploadedJson = await uploaded.json();
-    if (!uploaded.ok) {
-      uploadStatus.textContent = uploaded.status === 409 ? "Upload offset mismatch. Please retry." : "Upload failed.";
-      return;
+  uploadInProgress = true;
+  uploadButton.disabled = true;
+  try {
+    while (offset < file.size) {
+      uploadStatus.textContent = `Uploading ${uploadPercent(offset, file.size)}%...`;
+      const chunk = new FormData();
+      chunk.append("csrfmiddlewaretoken", csrf);
+      chunk.append("token", startedJson.token);
+      chunk.append("offset", offset);
+      chunk.append("chunk", file.slice(offset, Math.min(offset + chunkSize, file.size)));
+      const uploaded = await fetch(startedJson.chunk_url, { method: "POST", body: chunk, headers: { "Accept": "application/json" } });
+      const uploadedJson = await uploaded.json();
+      if (!uploaded.ok) {
+        uploadStatus.textContent = uploaded.status === 409 ? "Upload offset mismatch. Please retry." : "Upload failed.";
+        return;
+      }
+      offset = uploadedJson.bytes_received;
+      startedJson.bytes_received = offset;
+      rememberUpload(startedJson);
     }
-    offset = uploadedJson.bytes_received;
-  }
-  uploadStatus.textContent = "Finalizing and scanning...";
-  const finalize = new FormData();
-  finalize.append("csrfmiddlewaretoken", csrf);
-  finalize.append("token", startedJson.token);
-  const finalized = await fetch(startedJson.finalize_url, { method: "POST", body: finalize, headers: { "Accept": "application/json" } });
-  const finalizedJson = await finalized.json();
-  if (finalized.ok) {
-    uploadStatus.textContent = "Upload finished with status: " + finalizedJson.status;
-    localStorage.removeItem(uploadKey);
-    window.location = finalizedJson.dashboard_url;
-  } else {
-    uploadStatus.textContent = "Finalize failed.";
+    uploadStatus.textContent = "Finalizing and scanning...";
+    const finalize = new FormData();
+    finalize.append("csrfmiddlewaretoken", csrf);
+    finalize.append("token", startedJson.token);
+    const finalized = await fetch(startedJson.finalize_url, { method: "POST", body: finalize, headers: { "Accept": "application/json" } });
+    const finalizedJson = await finalized.json();
+    if (finalized.ok) {
+      uploadStatus.textContent = "Upload finished with status: " + finalizedJson.status;
+      forgetUpload(startedJson);
+      window.location = finalizedJson.dashboard_url;
+    } else {
+      uploadStatus.textContent = "Finalize failed.";
+    }
+  } finally {
+    uploadInProgress = false;
+    uploadButton.disabled = false;
+    loadActiveUploads();
   }
 });
+
+loadActiveUploads();
 </script>
 {% endblock %}

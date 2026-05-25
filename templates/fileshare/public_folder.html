@@ -4,7 +4,7 @@
 {% block content %}
 <section class="narrow">
   <h1>{{ folder.display_name }}</h1>
-  <p class="muted">Shared folder from Parafiles.</p>
+  <p class="muted">Shared by {{ share.owner.username }}.</p>
 </section>
 
 <section class="panel">
@@ -15,10 +15,7 @@
       {% for file in item.files %}
         <div class="list-row split">
           <span>{{ file.original_filename }} <span class="muted">{{ file.size|filesizeformat }}</span></span>
-          <form method="post" action="{% url 'prepare_download_file' share.slug file.pk %}">
-            {% csrf_token %}
-            <button type="submit">Download</button>
-          </form>
+          <a class="button-link" href="{% url 'public_folder_file' share.slug file.pk %}">Open</a>
         </div>
       {% empty %}
         <p class="muted">No downloadable files in this folder.</p>
