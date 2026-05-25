@@ -13,7 +13,7 @@ The examples assume this layout:
   upload_sessions/     temporary chunked-upload staging files
 ```
 
-Replace `parafiles.example.com` and paths if your server uses different conventions.
+This project is configured for `parafiles.net` and stores uploaded user data under `/srv/data/allfiles/parafiles`.
 
 ## Runtime Requirements
 
@@ -45,8 +45,9 @@ sudo usermod -aG parafiles www-data
 sudo install -d -o parafiles -g parafiles -m 2750 /srv/parafiles
 sudo install -d -o parafiles -g parafiles -m 2750 /srv/parafiles/app
 sudo install -d -o parafiles -g parafiles -m 2750 /srv/parafiles/app/staticfiles
-sudo install -d -o parafiles -g parafiles -m 2770 /srv/parafiles/private_uploads
-sudo install -d -o parafiles -g parafiles -m 2770 /srv/parafiles/upload_sessions
+sudo install -d -o parafiles -g parafiles -m 2770 /srv/data/allfiles/parafiles
+sudo install -d -o parafiles -g parafiles -m 2770 /srv/data/allfiles/parafiles/private_uploads
+sudo install -d -o parafiles -g parafiles -m 2770 /srv/data/allfiles/parafiles/upload_sessions
 ```
 
 The service units use `UMask=0007`, so files created by Gunicorn and Celery remain readable by the `parafiles` group and not by other local users.
@@ -94,13 +95,13 @@ sudo editor /srv/parafiles/.env
 Set at minimum:
 
 - `DJANGO_SECRET_KEY` to a long random value
-- `DJANGO_ALLOWED_HOSTS` to the public hostname
-- `DJANGO_CSRF_TRUSTED_ORIGINS` to the exact HTTPS origin
+- `DJANGO_ALLOWED_HOSTS=parafiles.net`
+- `DJANGO_CSRF_TRUSTED_ORIGINS=https://parafiles.net`
 - `DATABASE_URL` for the existing PostgreSQL instance
 - `REDIS_URL` for the Redis instance
 - SMTP settings and `DEFAULT_FROM_EMAIL`
-- `PARAFILES_STORAGE_ROOT=/srv/parafiles/private_uploads`
-- `PARAFILES_UPLOAD_SESSION_ROOT=/srv/parafiles/upload_sessions`
+- `PARAFILES_STORAGE_ROOT=/srv/data/allfiles/parafiles/private_uploads`
+- `PARAFILES_UPLOAD_SESSION_ROOT=/srv/data/allfiles/parafiles/upload_sessions`
 - `PARAFILES_SERVE_PRIVATE_DOWNLOADS=false`
 - `PARAFILES_INTERNAL_DOWNLOAD_PREFIX=/protected-files/`
 - `PARAFILES_ADMIN_2FA_REQUIRED=true`
@@ -167,25 +168,39 @@ sudo journalctl -u parafiles-celery -f
 
 The Gunicorn socket is created at `/run/parafiles/gunicorn.sock`. Nginx must run as a user that is a member of the `parafiles` group.
 
-## Nginx
+## Nginx And Certbot
 
-Install the site template:
+The checked-in Nginx template starts as a port 80 server block for `parafiles.net` and serves `/.well-known/acme-challenge/` from `/var/www/letsencrypt`. This matches the existing webroot Certbot flow.
 
 ```sh
 sudo cp /srv/parafiles/app/deploy/nginx.conf /etc/nginx/sites-available/parafiles
-sudo editor /etc/nginx/sites-available/parafiles
 sudo ln -s /etc/nginx/sites-available/parafiles /etc/nginx/sites-enabled/parafiles
+sudo install -d -o www-data -g www-data -m 0755 /var/www/letsencrypt/.well-known/acme-challenge
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-Before reloading, update:
+Before requesting the certificate, verify the challenge path:
 
-- `server_name`
-- TLS certificate directives if your existing Nginx setup does not inject them elsewhere
-- `client_max_body_size` if the per-file quota changes
+```sh
+echo ok | sudo tee /var/www/letsencrypt/.well-known/acme-challenge/parafiles-test
+curl -i http://parafiles.net/.well-known/acme-challenge/parafiles-test
+```
+
+Issue the Let's Encrypt certificate:
+
+```sh
+sudo certbot certonly --webroot -w /var/www/letsencrypt -d parafiles.net
+```
+
+After the certificate exists, add a HTTPS server block that uses:
+
+- `server_name parafiles.net`
+- `ssl_certificate /etc/letsencrypt/live/parafiles.net/fullchain.pem;`
+- `ssl_certificate_key /etc/letsencrypt/live/parafiles.net/privkey.pem;`
 - `alias /srv/parafiles/app/staticfiles/;` if `STATIC_ROOT` changes
-- `alias /srv/parafiles/private_uploads/;` if `PARAFILES_STORAGE_ROOT` changes
+- `alias /srv/data/allfiles/parafiles/private_uploads/;` if `PARAFILES_STORAGE_ROOT` changes
+- `proxy_pass http://unix:/run/parafiles/gunicorn.sock;`
 
 The `/protected-files/` location must stay `internal`; otherwise uploaded files could be downloaded without Django authorization and throttling.
 
@@ -212,8 +227,8 @@ Use `restart parafiles-gunicorn` instead of `reload` if the reload does not pick
 Back up all of these together:
 
 - PostgreSQL database
-- `/srv/parafiles/private_uploads`
-- `/srv/parafiles/upload_sessions` if preserving in-flight uploads matters
+- `/srv/data/allfiles/parafiles/private_uploads`
+- `/srv/data/allfiles/parafiles/upload_sessions` if preserving in-flight uploads matters
 - `/srv/parafiles/.env`
 
 The database stores logical folder/file metadata, public share slugs, scan state, audit logs, reports, and quota overrides. The private upload directory stores the bytes. Restoring only one without the other will leave broken file references.
@@ -235,7 +250,7 @@ The database stores logical folder/file metadata, public share slugs, scan state
 ## Troubleshooting
 
 - `502 Bad Gateway`: check `systemctl status parafiles-gunicorn`, socket permissions, and that `www-data` is in the `parafiles` group.
-- `403` or `404` for downloads after token handoff: verify `PARAFILES_INTERNAL_DOWNLOAD_PREFIX` matches the Nginx `/protected-files/` location and that Nginx can read `/srv/parafiles/private_uploads`.
+- `403` or `404` for downloads after token handoff: verify `PARAFILES_INTERNAL_DOWNLOAD_PREFIX` matches the Nginx `/protected-files/` location and that Nginx can read `/srv/data/allfiles/parafiles/private_uploads`.
 - Uploads remain unavailable: check `systemctl status parafiles-celery`, ClamAV availability, and scan result records in moderation.
 - Invite email does not send: verify SMTP env settings and inspect Gunicorn logs.
 - `check --deploy` fails on secret key: replace every placeholder in `/srv/parafiles/.env`.

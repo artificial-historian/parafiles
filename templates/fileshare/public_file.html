@@ -4,6 +4,7 @@
 {% block content %}
 <section class="narrow">
   <h1>{{ stored_file.display_title }}</h1>
+  <p class="muted">Shared by {{ share.owner.username }}{% if containing_folder %} from {{ containing_folder.display_name }}{% endif %}.</p>
   {% if stored_file.description %}
     <p class="lead">{{ stored_file.description|linebreaksbr }}</p>
   {% endif %}
@@ -22,7 +23,7 @@
       <p>{{ stored_file.changelog|linebreaksbr }}</p>
     </section>
   {% endif %}
-  <form method="post" action="{% url 'prepare_download' share.slug %}">
+  <form method="post" action="{{ download_url }}">
     {% csrf_token %}
     <button type="submit" class="primary">Download</button>
   </form>
@@ -30,7 +31,7 @@
 
 <section class="narrow panel">
   <h2>Report This File</h2>
-  <form method="post" action="{% url 'report_share' share.slug %}" class="stack">
+  <form method="post" action="{{ report_url }}" class="stack">
     {% csrf_token %}
     {{ report_form.as_p }}
     <button type="submit">Submit report</button>

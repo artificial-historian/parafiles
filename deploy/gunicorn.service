@@ -20,7 +20,7 @@ RestartSec=5
 PrivateTmp=true
 NoNewPrivileges=true
 ProtectSystem=full
-ReadWritePaths=/run/parafiles /srv/parafiles/app/staticfiles /srv/parafiles/private_uploads /srv/parafiles/upload_sessions
+ReadWritePaths=/run/parafiles /srv/parafiles/app/staticfiles /srv/data/allfiles/parafiles/private_uploads /srv/data/allfiles/parafiles/upload_sessions
 
 [Install]
 WantedBy=multi-user.target

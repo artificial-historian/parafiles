@@ -6,12 +6,25 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.utils import timezone
 
-from .models import AbuseReport, Invitation, ModerationAction, PublicShare, QuotaOverride, RateLimitEvent, StoredFile, User
+from .models import (
+    AbuseReport,
+    Invitation,
+    ModerationAction,
+    PublicShare,
+    QuotaOverride,
+    RateLimitEvent,
+    StoredFile,
+    User,
+)
 from .services.security import sanitize_filename
 
 
 class InvitationRegistrationForm(UserCreationForm):
     email = forms.EmailField(required=True)
+    alpha_notice = forms.BooleanField(
+        required=True,
+        label="I understand this is an alpha test service and not permanent private storage.",
+    )
 
     class Meta:
         model = User
