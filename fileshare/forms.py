@@ -51,6 +51,12 @@ class InvitationRegistrationForm(UserCreationForm):
         model = User
         fields = ("username", "email", "password1", "password2")
 
+    def clean_username(self) -> str:
+        username = self.cleaned_data["username"].strip()
+        if User.objects.filter(username__iexact=username).exists():
+            raise forms.ValidationError("A user with that username already exists.")
+        return username
+
     def clean_email(self) -> str:
         email = normalize_email(self.cleaned_data["email"])
         if User.objects.filter(

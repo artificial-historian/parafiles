@@ -39,6 +39,10 @@ class User(AbstractUser):
     class Meta(AbstractUser.Meta):
         constraints = [
             models.UniqueConstraint(
+                Lower("username"),
+                name="unique_username_ci",
+            ),
+            models.UniqueConstraint(
                 Lower("verified_email"),
                 condition=~Q(verified_email=""),
                 name="unique_verified_email_ci",

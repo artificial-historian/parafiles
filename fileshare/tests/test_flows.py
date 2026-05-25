@@ -139,6 +139,42 @@ class ParafilesFlowTests(TestCase):
         invitation.refresh_from_db()
         self.assertIsNotNone(invitation.accepted_at)
 
+    def test_usernames_authenticate_case_insensitively(self):
+        user = User.objects.create_user(
+            username="CaseLogin",
+            password="pass",
+            is_uploader=True,
+        )
+        Folder.get_root(user)
+
+        self.assertTrue(self.client.login(username="caselogin", password="pass"))
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "CaseLogin")
+
+    def test_invite_registration_rejects_case_only_username_duplicate(self):
+        User.objects.create_user(username="CreatorCase", password="pass")
+        invitation = Invitation.objects.create(expires_at=timezone.now() + timedelta(days=1))
+
+        response = self.client.post(
+            reverse("register_invite", args=[invitation.token]),
+            {
+                "username": "creatorcase",
+                "email": "case-duplicate@example.test",
+                "password1": "A-very-long-test-password-123",
+                "password2": "A-very-long-test-password-123",
+                "terms_accepted": "on",
+                "age_confirmed": "on",
+                "upload_review_consent": "on",
+                "beta_notice": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "A user with that username already exists.")
+        self.assertFalse(User.objects.filter(username="creatorcase").exists())
+
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
     def test_invite_registration_sends_verification_when_email_differs_from_invite(self):
         invitation = Invitation.objects.create(
