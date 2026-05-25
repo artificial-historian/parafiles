@@ -34,7 +34,14 @@
     <div class="table-head">Actions</div>
     {% for account in users %}
       <div>
-        <strong><a href="{% url 'moderation_user_files' account.pk %}">{{ account.username }}</a></strong>
+        {% url 'moderation_user_files' account.pk as user_files_url %}
+        <strong>
+          {% if user_files_url %}
+            <a href="{{ user_files_url }}">{{ account.username }}</a>
+          {% else %}
+            {{ account.username }}
+          {% endif %}
+        </strong>
         {% if account.email %}<p class="muted">{{ account.email }}</p>{% endif %}
       </div>
       <div>
