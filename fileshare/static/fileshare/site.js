@@ -64,6 +64,18 @@
     }
   }
 
+  function setNavOpen(isOpen) {
+    document.body.classList.toggle("nav-open", isOpen);
+    const toggle = document.querySelector(".nav-toggle");
+    if (toggle) {
+      toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    }
+  }
+
+  function closeNav() {
+    setNavOpen(false);
+  }
+
   function swapShell(html, url, { push = false } = {}) {
     const parser = new DOMParser();
     const nextDocument = parser.parseFromString(html, "text/html");
@@ -91,6 +103,7 @@
       window.ParafilesUploadState.inProgress = false;
     }
     closeOpenMenus();
+    closeNav();
     executeScripts(document.querySelector(pageSelector));
 
     if (url && url !== window.location.href) {
@@ -286,6 +299,13 @@
   }
 
   document.addEventListener("click", async (event) => {
+    const navToggle = event.target.closest(".nav-toggle");
+    if (navToggle) {
+      event.preventDefault();
+      setNavOpen(!document.body.classList.contains("nav-open"));
+      return;
+    }
+
     const copyButton = event.target.closest("[data-copy]");
     if (copyButton) {
       event.preventDefault();

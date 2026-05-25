@@ -265,7 +265,7 @@ The database stores logical folder/file metadata, public share slugs, scan state
 4. First admin can log in, enroll TOTP, and access `/moderation/`.
 5. Staff can create an invitation.
 6. An uploader can register from the invite, create folders, upload a small file, and enable sharing.
-7. Anonymous access to `/file/<slug>/` works.
+7. Anonymous access to `/f/<slug>/` works.
 8. Download goes through `/download/prepare/<slug>/` and `/download/<token>/`.
 9. Direct access to `/protected-files/...` returns 404 or 403 from Nginx.
 10. Abuse report submission creates a report visible in moderation.

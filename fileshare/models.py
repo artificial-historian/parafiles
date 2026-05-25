@@ -15,7 +15,7 @@ from django.utils import timezone
 
 
 def public_slug() -> str:
-    return secrets.token_urlsafe(24)
+    return secrets.token_urlsafe(12)
 
 
 def invite_token() -> str:

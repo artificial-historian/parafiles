@@ -54,6 +54,6 @@ On the server, run those commands as the dedicated `parafiles` user through the 
 - Staff or admin creates and emails a single-use invite.
 - Uploader registers from the invite URL and verifies a recovery email address.
 - Uploader creates folders, uploads chunked files, waits for scanning, and enables public shares.
-- Anonymous downloader opens `/file/<slug>/` or `/folder/<slug>/`, then downloads through a short-lived token.
+- Anonymous downloader opens `/f/<slug>/` or `/d/<slug>/`, then downloads through a short-lived token.
 - Downloader can report abusive content from the public page.
 - Staff can triage reports, hide/quarantine/restore content, regenerate links, soft-delete, or purge files.

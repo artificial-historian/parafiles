@@ -1188,53 +1188,20 @@ def public_folder(request: HttpRequest, slug: str) -> HttpResponse:
     )
 
 
-def public_folder_file(request: HttpRequest, slug: str, file_id: int) -> HttpResponse:
-    limited = public_rate_limit_or_429(request)
-    if limited:
-        return limited
-    share = live_share_or_404(slug, PublicShare.TargetType.FOLDER)
-    stored_file = get_object_or_404(StoredFile.objects.select_related("folder"), pk=file_id)
-    if not stored_file.is_publicly_downloadable or not file_belongs_to_share(stored_file, share):
-        raise Http404
-    return render(
-        request,
-        "fileshare/public_file.html",
-        public_file_context(
-            share=share,
-            stored_file=stored_file,
-            download_url=reverse("prepare_download_file", args=[share.slug, stored_file.pk]),
-            signature_download_url=reverse(
-                "prepare_signature_download_file", args=[share.slug, stored_file.pk]
-            ),
-            report_url=reverse("report_share_file", args=[share.slug, stored_file.pk]),
-            report_form=AbuseReportForm(),
-            containing_folder=share.folder,
-        ),
-    )
-
-
 @require_POST
-def report_share(request: HttpRequest, slug: str, file_id: int | None = None) -> HttpResponse:
+def report_share(request: HttpRequest, slug: str) -> HttpResponse:
     decision = check_report(request)
     if not decision.allowed:
         response = HttpResponse("Too many reports.", status=429)
         response["Retry-After"] = str(decision.retry_after)
         return response
     share = live_share_or_404(slug)
-    reported_file = None
-    if file_id is not None:
-        reported_file = get_object_or_404(StoredFile.objects.select_related("folder"), pk=file_id)
-        if (
-            not reported_file.is_publicly_downloadable
-            or not file_belongs_to_share(reported_file, share)
-        ):
-            raise Http404
     form = AbuseReportForm(request.POST)
     if form.is_valid():
         AbuseReport.objects.create(
             share=share,
-            stored_file=reported_file or share.stored_file,
-            folder=None if reported_file else share.folder,
+            stored_file=share.stored_file,
+            folder=share.folder,
             category=form.cleaned_data["category"],
             message=form.cleaned_data["message"],
             contact_email=form.cleaned_data.get("contact_email", ""),
@@ -1242,24 +1209,12 @@ def report_share(request: HttpRequest, slug: str, file_id: int | None = None) ->
             user_agent_hash=request_user_agent_hash(request),
         )
         return redirect("report_thanks")
-    if share.target_type == PublicShare.TargetType.FILE or reported_file:
+    if share.target_type == PublicShare.TargetType.FILE:
         target = "fileshare/public_file.html"
     else:
         target = "fileshare/public_folder.html"
     context = {"share": share, "report_form": form}
-    if reported_file:
-        context = public_file_context(
-            share=share,
-            stored_file=reported_file,
-            download_url=reverse("prepare_download_file", args=[share.slug, reported_file.pk]),
-            signature_download_url=reverse(
-                "prepare_signature_download_file", args=[share.slug, reported_file.pk]
-            ),
-            report_url=reverse("report_share_file", args=[share.slug, reported_file.pk]),
-            report_form=form,
-            containing_folder=share.folder,
-        )
-    elif share.stored_file_id:
+    if share.stored_file_id:
         context = public_file_context(
             share=share,
             stored_file=share.stored_file,
@@ -1286,9 +1241,22 @@ def file_belongs_to_share(stored_file: StoredFile, share: PublicShare) -> bool:
     return False
 
 
+def selected_file_id(request: HttpRequest, file_id: int | None = None) -> int | None:
+    if file_id is not None:
+        return file_id
+    posted_file_id = request.POST.get("file_id")
+    if not posted_file_id:
+        return None
+    try:
+        return int(posted_file_id)
+    except ValueError:
+        raise Http404 from None
+
+
 @require_POST
 def prepare_download(request: HttpRequest, slug: str, file_id: int | None = None) -> HttpResponse:
     share = live_share_or_404(slug)
+    file_id = selected_file_id(request, file_id)
     stored_file = shared_file_or_404(share, file_id)
 
     decision = check_download_request(request, stored_file.size)
@@ -1325,6 +1293,7 @@ def prepare_signature_download(
     request: HttpRequest, slug: str, file_id: int | None = None
 ) -> HttpResponse:
     share = live_share_or_404(slug)
+    file_id = selected_file_id(request, file_id)
     stored_file = shared_file_or_404(share, file_id)
     signature_artifact = signature_artifact_for(stored_file)
     if not signature_artifact:
@@ -1711,13 +1680,6 @@ def moderation_user_files(request: HttpRequest, user_id: int) -> HttpResponse:
         )
         .order_by("folder__name", "original_filename")
     )
-    folder_shares = list(
-        PublicShare.objects.filter(
-            owner=target_user,
-            target_type=PublicShare.TargetType.FOLDER,
-            is_enabled=True,
-        ).select_related("folder")
-    )
     for folder in folders:
         folder.active_links = [
             share_public_url(request, share)
@@ -1730,14 +1692,7 @@ def moderation_user_files(request: HttpRequest, user_id: int) -> HttpResponse:
             for share in stored_file.public_shares.all()
             if share.is_live
         ]
-        inherited_links = [
-            request.build_absolute_uri(
-                reverse("public_folder_file", args=[share.slug, stored_file.pk])
-            )
-            for share in folder_shares
-            if share.folder and share.is_live and share.folder.contains(stored_file.folder)
-        ]
-        stored_file.active_links = direct_links + inherited_links
+        stored_file.active_links = direct_links
 
     context = {
         "account": target_user,

@@ -9,28 +9,45 @@
   <link rel="stylesheet" href="{% static 'fileshare/site.css' %}">
 </head>
 <body>
+  <a class="skip-link" href="#content">Skip to content</a>
   <header class="site-header">
-    <a class="brand" href="{% url 'home' %}">Parafiles</a>
-    <nav>
+    <a class="brand" href="{% url 'home' %}" aria-label="Parafiles home">
+      <span class="brand-mark" aria-hidden="true">P</span>
+      <span>
+        <strong>Parafiles</strong>
+        <small>Mod files</small>
+      </span>
+    </a>
+    <button class="nav-toggle" type="button" aria-controls="site-nav" aria-expanded="false">Menu</button>
+    <nav id="site-nav" class="site-nav" aria-label="Primary navigation">
       {% if request.user.is_authenticated %}
-        <a href="{% url 'dashboard' %}">Dashboard</a>
-        {% if request.user.can_upload %}<a href="{% url 'files_and_shares' %}">Files & shares</a>{% endif %}
-        {% if request.user.can_upload %}<a href="{% url 'quick_share' %}">Quick share</a>{% endif %}
-        {% if request.user.can_upload %}<a href="{% url 'account_settings' %}">Account</a>{% endif %}
+        <a class="{% if request.resolver_match.url_name == 'dashboard' %}is-active{% endif %}" href="{% url 'dashboard' %}">Dashboard</a>
+        {% if request.user.can_upload %}<a class="{% if request.resolver_match.url_name == 'files_and_shares' %}is-active{% endif %}" href="{% url 'files_and_shares' %}">Files & shares</a>{% endif %}
+        {% if request.user.can_upload %}<a class="{% if request.resolver_match.url_name == 'quick_share' %}is-active{% endif %}" href="{% url 'quick_share' %}">Quick share</a>{% endif %}
+        {% if request.user.can_upload %}<a class="{% if request.resolver_match.url_name == 'account_settings' %}is-active{% endif %}" href="{% url 'account_settings' %}">Account</a>{% endif %}
         {% if request.user.is_staff %}
-          <a href="{% url 'staff_2fa_verify' %}">2FA</a>
-          <a href="{% url 'moderation_dashboard' %}">Moderation</a>
+          <a class="{% if request.resolver_match.url_name == 'staff_2fa_verify' %}is-active{% endif %}" href="{% url 'staff_2fa_verify' %}">2FA</a>
+          <a class="{% if '/moderation/' in request.path %}is-active{% endif %}" href="{% url 'moderation_dashboard' %}">Moderation</a>
         {% endif %}
         <form class="inline" method="post" action="{% url 'logout' %}">
           {% csrf_token %}
           <button type="submit" class="link-button">Sign out</button>
         </form>
       {% else %}
-        <a href="{% url 'login' %}">Uploader sign in</a>
+        <a class="{% if request.resolver_match.url_name == 'login' %}is-active{% endif %}" href="{% url 'login' %}">Uploader sign in</a>
       {% endif %}
     </nav>
+    {% if request.user.is_authenticated %}
+      <div class="user-chip" title="{{ request.user.username }}">
+        <span class="avatar" aria-hidden="true">{{ request.user.username|first|upper }}</span>
+        <span>
+          <strong>{{ request.user.username }}</strong>
+          <small>{% if request.user.is_staff %}Staff{% elif request.user.can_upload %}Uploader{% else %}Viewer{% endif %}</small>
+        </span>
+      </div>
+    {% endif %}
   </header>
-  <main class="page">
+  <main id="content" class="page">
     {% if messages %}
       <div class="messages">
         {% for message in messages %}

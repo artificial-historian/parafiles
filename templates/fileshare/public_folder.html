@@ -18,15 +18,11 @@
       {% for file in item.files %}
         <div class="list-row split">
           <span>{{ file.original_filename }} <span class="muted">{{ file.size|filesizeformat }}</span></span>
-          {% url 'public_folder_file' share.slug file.pk as folder_file_url %}
-          {% if folder_file_url %}
-            <a class="button-link" href="{{ folder_file_url }}">Open</a>
-          {% else %}
-            <form method="post" action="{% url 'prepare_download_file' share.slug file.pk %}" data-ajax="off">
-              {% csrf_token %}
-              <button type="submit">Download</button>
-            </form>
-          {% endif %}
+          <form method="post" action="{% url 'prepare_download' share.slug %}" data-ajax="off">
+            {% csrf_token %}
+            <input type="hidden" name="file_id" value="{{ file.pk }}">
+            <button type="submit">Download</button>
+          </form>
         </div>
       {% empty %}
         <p class="muted">No downloadable files in this folder.</p>

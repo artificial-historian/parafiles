@@ -379,6 +379,36 @@ class ParafilesFlowTests(TestCase):
         self.assertEqual(finalized_payload["file_id"], stored_file.pk)
         self.assertIn(reverse("public_file", args=[share.slug]), finalized_payload["share_url"])
 
+    def test_public_share_slugs_and_routes_are_short(self):
+        user = self.make_uploader()
+        root = Folder.get_root(user)
+        folder = Folder.objects.create(owner=user, parent=root, name="Published")
+        stored_file = self.make_available_file(user, folder, name="short.zip")
+        file_share = PublicShare.objects.create(
+            owner=user, target_type=PublicShare.TargetType.FILE, stored_file=stored_file
+        )
+        folder_share = PublicShare.objects.create(
+            owner=user, target_type=PublicShare.TargetType.FOLDER, folder=folder
+        )
+
+        self.assertEqual(len(file_share.slug), 16)
+        self.assertEqual(len(folder_share.slug), 16)
+        self.assertEqual(reverse("public_file", args=[file_share.slug]), f"/f/{file_share.slug}/")
+        self.assertEqual(reverse("public_folder", args=[folder_share.slug]), f"/d/{folder_share.slug}/")
+        self.assertEqual(self.client.get(f"/file/{file_share.slug}/").status_code, 200)
+        self.assertEqual(self.client.get(f"/folder/{folder_share.slug}/").status_code, 200)
+        self.assertEqual(
+            self.client.get(f"/d/{folder_share.slug}/f/{stored_file.pk}/").status_code, 404
+        )
+
+        moved = Folder.objects.create(owner=user, parent=root, name="Moved")
+        stored_file.folder = moved
+        stored_file.save(update_fields=["folder", "updated_at"])
+
+        self.assertEqual(
+            self.client.get(reverse("public_file", args=[file_share.slug])).status_code, 200
+        )
+
     def test_quick_share_folder_apis_update_uploads_and_files(self):
         user = self.make_uploader()
         root = Folder.get_root(user)
@@ -993,13 +1023,14 @@ class ParafilesFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, public_file.original_filename)
         self.assertContains(response, f"Shared by {user.username}")
-        self.assertContains(
-            response, reverse("public_folder_file", args=[share.slug, public_file.pk])
-        )
+        self.assertContains(response, reverse("prepare_download", args=[share.slug]))
+        self.assertContains(response, f'name="file_id" value="{public_file.pk}"')
+        self.assertNotContains(response, f"/d/{share.slug}/f/{public_file.pk}/")
+        self.assertNotContains(response, f"/download/prepare/{share.slug}/{public_file.pk}/")
         self.assertNotContains(response, "private.zip")
         self.assertNotContains(response, "Parent Secret")
 
-    def test_folder_shared_file_opens_file_page_and_reports_file(self):
+    def test_folder_shared_file_downloads_and_reports_file(self):
         user = self.make_uploader(username="folderowner")
         root = Folder.get_root(user)
         shared = Folder.objects.create(owner=user, parent=root, name="Published")
@@ -1010,32 +1041,31 @@ class ParafilesFlowTests(TestCase):
             folder=shared,
         )
 
-        file_page = self.client.get(
-            reverse("public_folder_file", args=[share.slug, stored_file.pk])
+        folder_page = self.client.get(reverse("public_folder", args=[share.slug]))
+        self.assertContains(folder_page, "inside.zip")
+        self.assertContains(folder_page, reverse("prepare_download", args=[share.slug]))
+        self.assertContains(folder_page, f'name="file_id" value="{stored_file.pk}"')
+        self.assertNotContains(folder_page, f"/download/prepare/{share.slug}/{stored_file.pk}/")
+        self.assertNotContains(folder_page, f"/d/{share.slug}/f/{stored_file.pk}/")
+
+        prepared = self.client.post(
+            reverse("prepare_download", args=[share.slug]), {"file_id": stored_file.pk}
         )
-        self.assertEqual(file_page.status_code, 200)
-        self.assertContains(file_page, "inside.zip")
-        self.assertContains(file_page, f"Shared by {user.username}")
-        self.assertContains(
-            file_page, reverse("prepare_download_file", args=[share.slug, stored_file.pk])
-        )
-        self.assertContains(
-            file_page, reverse("report_share_file", args=[share.slug, stored_file.pk])
-        )
+        self.assertEqual(prepared.status_code, 302)
 
         report = self.client.post(
-            reverse("report_share_file", args=[share.slug, stored_file.pk]),
+            reverse("report_share", args=[share.slug]),
             {
                 "category": AbuseReport.Category.MALWARE,
-                "message": "This individual file appears unsafe.",
+                "message": "This folder share appears unsafe.",
             },
         )
 
         self.assertEqual(report.status_code, 302)
         abuse_report = AbuseReport.objects.get()
         self.assertEqual(abuse_report.share, share)
-        self.assertEqual(abuse_report.stored_file, stored_file)
-        self.assertIsNone(abuse_report.folder)
+        self.assertIsNone(abuse_report.stored_file)
+        self.assertEqual(abuse_report.folder, shared)
 
     def test_hidden_file_public_link_returns_not_found(self):
         user = self.make_uploader()
@@ -1521,9 +1551,7 @@ class ParafilesFlowTests(TestCase):
         self.assertContains(response, "3 total")
         self.assertContains(response, "1 allowed events")
         self.assertContains(response, reverse("public_folder", args=[share.slug]))
-        self.assertContains(
-            response, reverse("public_folder_file", args=[share.slug, stored_file.pk])
-        )
+        self.assertNotContains(response, f"/d/{share.slug}/f/{stored_file.pk}/")
 
     def test_staff_cannot_suspend_self(self):
         staff = User.objects.create_user(
