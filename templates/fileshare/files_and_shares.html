@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% block title %}Files & Shares - Parafiles{% endblock %}
+{% block content %}
+<section class="toolbar">
+  <div>
+    <h1>Files & Shares</h1>
+    <nav class="breadcrumbs" aria-label="Folder path">
+      {% for folder in breadcrumbs %}
+        {% if not forloop.first %}<span aria-hidden="true">/</span>{% endif %}
+        <a href="{% url 'files_and_shares' %}?folder={{ folder.pk }}">{{ folder.display_name }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+  <a class="button-link" href="{% url 'quick_share' %}">Quick share</a>
+</section>
+
+<section class="files-layout">
+  <aside class="panel folder-sidebar">
+    <h2>Folders</h2>
+    <a class="folder-tree-row {% if current_folder.is_root %}current{% endif %}" href="{% url 'files_and_shares' %}">
+      <span>/</span>
+    </a>
+    {% for folder in folder_tree %}
+      {% if not folder.is_root %}
+        <a class="folder-tree-row {% if folder.pk == current_folder.pk %}current{% endif %}" style="--depth: {{ folder.depth }}" href="{% url 'files_and_shares' %}?folder={{ folder.pk }}">
+          <span>{{ folder.name }}</span>
+        </a>
+      {% endif %}
+    {% endfor %}
+  </aside>
+
+  <div class="files-main">
+    <section class="panel">
+      <div class="split">
+        <h2>{{ current_folder.logical_path }}</h2>
+        <form method="post" action="{% url 'folder_create' %}" class="row-form">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <input type="hidden" name="parent_id" value="{{ current_folder.pk }}">
+          <input name="name" maxlength="180" placeholder="New folder" required>
+          <button type="submit">Create</button>
+        </form>
+      </div>
+
+      <div class="files-list">
+        {% if current_folder.parent_id %}
+          <a class="file-browser-row folder-up" href="{% url 'files_and_shares' %}?folder={{ current_folder.parent_id }}">
+            <span class="item-name">..</span>
+            <span class="muted">Parent folder</span>
+          </a>
+        {% endif %}
+
+        {% for row in folder_rows %}
+          <div class="file-browser-row">
+            <div>
+              <a class="item-name" href="{% url 'files_and_shares' %}?folder={{ row.folder.pk }}">{{ row.folder.name }}</a>
+              <span class="muted">Folder</span>
+            </div>
+            <div class="share-cell">
+              {% if row.share %}
+                <a class="share-url" href="{{ row.share_url }}" target="_blank" rel="noopener">{{ row.share_url }}</a>
+                <button type="button" class="icon-button copy-button" data-copy="{{ row.share_url }}" aria-label="Copy share link" title="Copy share link">⧉</button>
+              {% else %}
+                <span class="muted">Not shared</span>
+              {% endif %}
+            </div>
+            <div class="actions item-actions">
+              {% if row.share %}
+                <form method="post" action="{% url 'share_regenerate' row.share.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit">Regenerate</button>
+                </form>
+                <form method="post" action="{% url 'share_toggle' 'folder' row.folder.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <input type="hidden" name="enabled" value="0">
+                  <button type="submit">Unshare</button>
+                </form>
+              {% else %}
+                <form method="post" action="{% url 'share_toggle' 'folder' row.folder.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <input type="hidden" name="enabled" value="1">
+                  <button type="submit">Share</button>
+                </form>
+              {% endif %}
+              <details class="action-menu">
+                <summary>Move</summary>
+                <form method="post" action="{% url 'folder_move' row.folder.pk %}" class="stack">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <select name="target_folder_id" required>
+                    {% for target in row.move_targets %}
+                      <option value="{{ target.pk }}" {% if target.pk == current_folder.pk %}selected{% endif %}>{{ target.logical_path }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit">Move folder</button>
+                </form>
+              </details>
+              <form method="post" action="{% url 'folder_delete' row.folder.pk %}" data-confirm="Delete this folder and hide its contents from public browsing?">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" class="danger">Delete</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+
+        {% for row in file_rows %}
+          <div class="file-browser-row">
+            <div>
+              <strong class="item-name">{{ row.file.original_filename }}</strong>
+              <span class="muted">{{ row.file.size|filesizeformat }} · {{ row.file.get_status_display }}</span>
+            </div>
+            <div class="share-cell">
+              {% if row.share %}
+                <a class="share-url" href="{{ row.share_url }}" target="_blank" rel="noopener">{{ row.share_url }}</a>
+                <button type="button" class="icon-button copy-button" data-copy="{{ row.share_url }}" aria-label="Copy share link" title="Copy share link">⧉</button>
+              {% else %}
+                <span class="muted">Not shared</span>
+              {% endif %}
+            </div>
+            <div class="actions item-actions">
+              {% if row.share %}
+                <form method="post" action="{% url 'share_regenerate' row.share.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <button type="submit">Regenerate</button>
+                </form>
+                <form method="post" action="{% url 'share_toggle' 'file' row.file.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <input type="hidden" name="enabled" value="0">
+                  <button type="submit">Unshare</button>
+                </form>
+              {% else %}
+                <form method="post" action="{% url 'share_toggle' 'file' row.file.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <input type="hidden" name="enabled" value="1">
+                  <button type="submit">Share</button>
+                </form>
+              {% endif %}
+              <details class="action-menu">
+                <summary>Move</summary>
+                <form method="post" action="{% url 'file_move' row.file.pk %}" class="stack">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <select name="target_folder_id" required>
+                    {% for target in move_targets %}
+                      <option value="{{ target.pk }}" {% if target.pk == current_folder.pk %}selected{% endif %}>{{ target.logical_path }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit">Move file</button>
+                </form>
+              </details>
+              <form method="post" action="{% url 'file_delete' row.file.pk %}" data-confirm="Delete this file?">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit" class="danger">Delete</button>
+              </form>
+            </div>
+          </div>
+        {% endfor %}
+
+        {% if not folder_rows and not file_rows and not current_folder.parent_id %}
+          <p class="muted">No files or folders yet.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Active Shares</h2>
+      <div class="share-list">
+        {% for row in share_rows %}
+          <div class="share-list-row">
+            <div>
+              <strong>{{ row.name }}</strong>
+              <div class="share-cell">
+                <a class="share-url" href="{{ row.url }}" target="_blank" rel="noopener">{{ row.url }}</a>
+                <button type="button" class="icon-button copy-button" data-copy="{{ row.url }}" aria-label="Copy share link" title="Copy share link">⧉</button>
+              </div>
+            </div>
+            <div class="actions">
+              <form method="post" action="{% url 'share_regenerate' row.share.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit">Regenerate</button>
+              </form>
+              {% if row.share.target_type == "file" %}
+                <form method="post" action="{% url 'share_toggle' 'file' row.share.stored_file.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <input type="hidden" name="enabled" value="0">
+                  <button type="submit">Unshare</button>
+                </form>
+              {% else %}
+                <form method="post" action="{% url 'share_toggle' 'folder' row.share.folder.pk %}">
+                  {% csrf_token %}
+                  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                  <input type="hidden" name="enabled" value="0">
+                  <button type="submit">Unshare</button>
+                </form>
+              {% endif %}
+            </div>
+          </div>
+        {% empty %}
+          <p class="muted">No active shares.</p>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</section>
+
+<script>
+async function copyShareText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  document.execCommand("copy");
+  textArea.remove();
+}
+
+document.addEventListener("click", async (event) => {
+  const copyButton = event.target.closest("[data-copy]");
+  if (copyButton) {
+    await copyShareText(copyButton.dataset.copy);
+    copyButton.textContent = "Copied";
+    setTimeout(() => { copyButton.textContent = "⧉"; }, 1200);
+  }
+});
+
+for (const form of document.querySelectorAll("form[data-confirm]")) {
+  form.addEventListener("submit", (event) => {
+    if (!window.confirm(form.dataset.confirm)) {
+      event.preventDefault();
+    }
+  });
+}
+</script>
+{% endblock %}

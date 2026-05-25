@@ -70,6 +70,7 @@ from .services.storage import (
     private_path,
     purge_file_bytes,
     purge_folder_tree,
+    temp_path_for_session,
     write_chunk,
 )
 from .services.throttling import (
@@ -180,6 +181,116 @@ def dashboard(request: HttpRequest) -> HttpResponse:
     return render(request, "fileshare/dashboard.html", context)
 
 
+def folder_breadcrumbs(folder: Folder) -> list[Folder]:
+    breadcrumbs: list[Folder] = []
+    current: Folder | None = folder
+    while current:
+        breadcrumbs.append(current)
+        current = current.parent
+    return list(reversed(breadcrumbs))
+
+
+def public_share_url(request: HttpRequest, share: PublicShare) -> str:
+    if share.target_type == PublicShare.TargetType.FILE:
+        url = reverse("public_file", args=[share.slug])
+    else:
+        url = reverse("public_folder", args=[share.slug])
+    return request.build_absolute_uri(url)
+
+
+def folder_move_targets(folders: list[Folder], folder: Folder) -> list[Folder]:
+    return [
+        candidate
+        for candidate in folders
+        if candidate.pk != folder.pk and not folder.contains(candidate)
+    ]
+
+
+def ordered_folder_tree(folders: list[Folder]) -> list[Folder]:
+    children: dict[int | None, list[Folder]] = {}
+    for folder in folders:
+        children.setdefault(folder.parent_id, []).append(folder)
+    for siblings in children.values():
+        siblings.sort(key=lambda item: (item.name.lower(), item.pk))
+
+    ordered: list[Folder] = []
+
+    def visit(folder: Folder) -> None:
+        ordered.append(folder)
+        for child in children.get(folder.pk, []):
+            visit(child)
+
+    for root in children.get(None, []):
+        visit(root)
+    return ordered
+
+
+@login_required
+@uploader_required
+def files_and_shares(request: HttpRequest) -> HttpResponse:
+    current_folder = owned_folder_or_404(request.user, request.GET.get("folder"))
+    folders = list(
+        Folder.objects.filter(owner=request.user, is_deleted=False)
+        .select_related("parent")
+        .order_by("name", "id")
+    )
+    folder_tree = ordered_folder_tree(folders)
+    child_folders = [folder for folder in folder_tree if folder.parent_id == current_folder.pk]
+    files = list(
+        StoredFile.objects.filter(owner=request.user, folder=current_folder)
+        .exclude(status=StoredFile.Status.DELETED)
+        .order_by("original_filename", "id")
+    )
+    active_shares = list(
+        PublicShare.objects.filter(owner=request.user, is_enabled=True)
+        .select_related("stored_file", "folder")
+        .order_by("-created_at")
+    )
+    file_shares = {share.stored_file_id: share for share in active_shares if share.stored_file_id}
+    folder_shares = {share.folder_id: share for share in active_shares if share.folder_id}
+    folder_rows = [
+        {
+            "folder": folder,
+            "share": folder_shares.get(folder.pk),
+            "share_url": public_share_url(request, folder_shares[folder.pk])
+            if folder.pk in folder_shares
+            else "",
+            "move_targets": folder_move_targets(folders, folder),
+        }
+        for folder in child_folders
+    ]
+    file_rows = [
+        {
+            "file": stored_file,
+            "share": file_shares.get(stored_file.pk),
+            "share_url": public_share_url(request, file_shares[stored_file.pk])
+            if stored_file.pk in file_shares
+            else "",
+        }
+        for stored_file in files
+    ]
+    share_rows = [
+        {
+            "share": share,
+            "name": share.stored_file.original_filename
+            if share.stored_file_id
+            else share.folder.logical_path(),
+            "url": public_share_url(request, share),
+        }
+        for share in active_shares
+    ]
+    context = {
+        "current_folder": current_folder,
+        "breadcrumbs": folder_breadcrumbs(current_folder),
+        "folder_rows": folder_rows,
+        "file_rows": file_rows,
+        "folder_tree": folder_tree,
+        "move_targets": folders,
+        "share_rows": share_rows,
+    }
+    return render(request, "fileshare/files_and_shares.html", context)
+
+
 @login_required
 @uploader_required
 def account_settings(request: HttpRequest) -> HttpResponse:
@@ -220,6 +331,81 @@ def account_settings(request: HttpRequest) -> HttpResponse:
         "recent_scans": recent_scans,
     }
     return render(request, "fileshare/account_settings.html", context)
+
+
+@login_required
+@uploader_required
+def quick_share(request: HttpRequest) -> HttpResponse:
+    root = Folder.get_root(request.user)
+    return render(
+        request,
+        "fileshare/quick_share.html",
+        {
+            "root_folder": root,
+        },
+    )
+
+
+def folder_json(folder: Folder) -> dict[str, object]:
+    return {
+        "id": folder.pk,
+        "parent_id": folder.parent_id,
+        "name": folder.display_name,
+        "path": folder.logical_path(),
+        "depth": folder.depth,
+    }
+
+
+@login_required
+@uploader_required
+def quick_share_folders(request: HttpRequest) -> JsonResponse:
+    folders = (
+        Folder.objects.filter(owner=request.user, is_deleted=False)
+        .select_related("parent")
+        .order_by("parent_id", "name", "id")
+    )
+    return JsonResponse({"folders": [folder_json(folder) for folder in folders]})
+
+
+@require_POST
+@login_required
+@uploader_required
+def quick_share_upload_folder(request: HttpRequest, upload_id) -> JsonResponse:
+    session = upload_session_or_404(request, upload_id)
+    target = owned_folder_or_404(request.user, request.POST.get("folder_id"))
+    if session.status not in {UploadSession.Status.INIT, UploadSession.Status.UPLOADING}:
+        return JsonResponse({"errors": ["Upload folder can no longer be changed."]}, status=400)
+    session.folder = target
+    session.save(update_fields=["folder"])
+    return JsonResponse({"folder": folder_json(target)})
+
+
+@require_POST
+@login_required
+@uploader_required
+def quick_share_file_folder(request: HttpRequest, file_id: int) -> JsonResponse:
+    stored_file = owned_file_or_404(request.user, file_id)
+    target = owned_folder_or_404(request.user, request.POST.get("folder_id"))
+    stored_file.folder = target
+    stored_file.save(update_fields=["folder", "updated_at"])
+    return JsonResponse({"folder": folder_json(target)})
+
+
+@require_POST
+@login_required
+@uploader_required
+def quick_share_cancel_upload(request: HttpRequest, upload_id) -> JsonResponse:
+    session = upload_session_or_404(request, upload_id)
+    if session.status in {UploadSession.Status.INIT, UploadSession.Status.UPLOADING}:
+        session.status = UploadSession.Status.FAILED
+        session.save(update_fields=["status"])
+        try:
+            temp_path_for_session(session.upload_id).unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+    return JsonResponse({"status": session.status})
 
 
 def staff_user_required(request: HttpRequest) -> None:
@@ -297,6 +483,7 @@ def staff_2fa_verify(request: HttpRequest) -> HttpResponse:
 @uploader_required
 def folder_create(request: HttpRequest) -> HttpResponse:
     parent = owned_folder_or_404(request.user, request.POST.get("parent_id"))
+    fallback = f"{reverse('dashboard')}?folder={parent.pk}"
     quota = effective_quota(request.user)
     if parent.depth + 1 > quota.folder_depth_limit:
         raise ValidationError("This folder would exceed your folder depth limit.")
@@ -308,7 +495,7 @@ def folder_create(request: HttpRequest) -> HttpResponse:
         messages.success(request, "Folder created.")
     elif wants_json(request):
         return JsonResponse({"errors": form.errors}, status=400)
-    return redirect(f"{reverse('dashboard')}?folder={parent.pk}")
+    return redirect(redirect_target(request, fallback))
 
 
 @require_POST
@@ -316,6 +503,7 @@ def folder_create(request: HttpRequest) -> HttpResponse:
 @uploader_required
 def folder_rename(request: HttpRequest, folder_id: int) -> HttpResponse:
     folder = owned_folder_or_404(request.user, folder_id)
+    fallback = f"{reverse('dashboard')}?folder={folder.parent_id or folder.pk}"
     if folder.is_root:
         raise PermissionDenied("The root folder cannot be renamed.")
     form = FolderForm(request.POST)
@@ -324,7 +512,7 @@ def folder_rename(request: HttpRequest, folder_id: int) -> HttpResponse:
         folder.full_clean()
         folder.save(update_fields=["name", "updated_at"])
         messages.success(request, "Folder renamed.")
-    return redirect(f"{reverse('dashboard')}?folder={folder.parent_id or folder.pk}")
+    return redirect(redirect_target(request, fallback))
 
 
 @require_POST
@@ -332,6 +520,7 @@ def folder_rename(request: HttpRequest, folder_id: int) -> HttpResponse:
 @uploader_required
 def folder_move(request: HttpRequest, folder_id: int) -> HttpResponse:
     folder = owned_folder_or_404(request.user, folder_id)
+    fallback = f"{reverse('dashboard')}?folder={folder.parent_id}"
     if folder.is_root:
         raise PermissionDenied("The root folder cannot be moved.")
     form = MoveForm(request.POST)
@@ -342,8 +531,9 @@ def folder_move(request: HttpRequest, folder_id: int) -> HttpResponse:
         folder.parent = target
         folder.full_clean()
         folder.save(update_fields=["parent", "updated_at"])
+        fallback = f"{reverse('dashboard')}?folder={folder.parent_id}"
         messages.success(request, "Folder moved.")
-    return redirect(f"{reverse('dashboard')}?folder={folder.parent_id}")
+    return redirect(redirect_target(request, fallback))
 
 
 @require_POST
@@ -351,11 +541,12 @@ def folder_move(request: HttpRequest, folder_id: int) -> HttpResponse:
 @uploader_required
 def folder_delete(request: HttpRequest, folder_id: int) -> HttpResponse:
     folder = owned_folder_or_404(request.user, folder_id)
+    fallback = f"{reverse('dashboard')}?folder={folder.parent_id}"
     if folder.is_root:
         raise PermissionDenied("The root folder cannot be deleted.")
     folder.soft_delete()
     messages.success(request, "Folder hidden from your dashboard.")
-    return redirect(f"{reverse('dashboard')}?folder={folder.parent_id}")
+    return redirect(redirect_target(request, fallback))
 
 
 @require_POST
@@ -363,12 +554,13 @@ def folder_delete(request: HttpRequest, folder_id: int) -> HttpResponse:
 @uploader_required
 def file_rename(request: HttpRequest, file_id: int) -> HttpResponse:
     stored_file = owned_file_or_404(request.user, file_id)
+    fallback = f"{reverse('dashboard')}?folder={stored_file.folder_id}"
     form = FileRenameForm(request.POST)
     if form.is_valid():
         stored_file.original_filename = form.cleaned_data["filename"]
         stored_file.save(update_fields=["original_filename", "updated_at"])
         messages.success(request, "File renamed.")
-    return redirect(f"{reverse('dashboard')}?folder={stored_file.folder_id}")
+    return redirect(redirect_target(request, fallback))
 
 
 @require_POST
@@ -376,13 +568,14 @@ def file_rename(request: HttpRequest, file_id: int) -> HttpResponse:
 @uploader_required
 def file_metadata(request: HttpRequest, file_id: int) -> HttpResponse:
     stored_file = owned_file_or_404(request.user, file_id)
+    fallback = f"{reverse('dashboard')}?folder={stored_file.folder_id}"
     form = FileMetadataForm(request.POST, instance=stored_file)
     if form.is_valid():
         form.save()
         messages.success(request, "File metadata updated.")
     else:
         messages.error(request, "File metadata update failed.")
-    return redirect(f"{reverse('dashboard')}?folder={stored_file.folder_id}")
+    return redirect(redirect_target(request, fallback))
 
 
 @require_POST
@@ -390,13 +583,15 @@ def file_metadata(request: HttpRequest, file_id: int) -> HttpResponse:
 @uploader_required
 def file_move(request: HttpRequest, file_id: int) -> HttpResponse:
     stored_file = owned_file_or_404(request.user, file_id)
+    fallback = f"{reverse('dashboard')}?folder={stored_file.folder_id}"
     form = MoveForm(request.POST)
     if form.is_valid():
         target = owned_folder_or_404(request.user, form.cleaned_data["target_folder_id"])
         stored_file.folder = target
         stored_file.save(update_fields=["folder", "updated_at"])
+        fallback = f"{reverse('dashboard')}?folder={stored_file.folder_id}"
         messages.success(request, "File moved.")
-    return redirect(f"{reverse('dashboard')}?folder={stored_file.folder_id}")
+    return redirect(redirect_target(request, fallback))
 
 
 @require_POST
@@ -404,9 +599,10 @@ def file_move(request: HttpRequest, file_id: int) -> HttpResponse:
 @uploader_required
 def file_delete(request: HttpRequest, file_id: int) -> HttpResponse:
     stored_file = owned_file_or_404(request.user, file_id)
+    fallback = f"{reverse('dashboard')}?folder={stored_file.folder_id}"
     stored_file.soft_delete()
     messages.success(request, "File deleted.")
-    return redirect(f"{reverse('dashboard')}?folder={stored_file.folder_id}")
+    return redirect(redirect_target(request, fallback))
 
 
 @require_POST
@@ -541,6 +737,19 @@ def upload_chunk(request: HttpRequest, upload_id) -> JsonResponse:
     return JsonResponse({"bytes_received": session.bytes_received})
 
 
+def enabled_file_share_for(user: User, stored_file: StoredFile) -> PublicShare:
+    share, _created = PublicShare.objects.get_or_create(
+        owner=user,
+        target_type=PublicShare.TargetType.FILE,
+        stored_file=stored_file,
+        defaults={"is_enabled": True},
+    )
+    if not share.is_enabled:
+        share.is_enabled = True
+        share.save(update_fields=["is_enabled"])
+    return share
+
+
 @require_POST
 @login_required
 @uploader_required
@@ -556,14 +765,18 @@ def upload_finalize(request: HttpRequest, upload_id) -> JsonResponse:
     else:
         scan_file_task.delay(stored_file.pk)
     stored_file.refresh_from_db()
-    return JsonResponse(
-        {
-            "file_id": stored_file.pk,
-            "status": stored_file.status,
-            "sha256": stored_file.sha256,
-            "dashboard_url": f"{reverse('dashboard')}?folder={stored_file.folder_id}",
-        }
-    )
+    payload = {
+        "file_id": stored_file.pk,
+        "status": stored_file.status,
+        "sha256": stored_file.sha256,
+        "dashboard_url": f"{reverse('dashboard')}?folder={stored_file.folder_id}",
+    }
+    if request.POST.get("quick_share") == "1":
+        share = enabled_file_share_for(request.user, stored_file)
+        payload["share_id"] = share.pk
+        payload["share_url"] = request.build_absolute_uri(reverse("public_file", args=[share.slug]))
+        payload["folder_id"] = stored_file.folder_id
+    return JsonResponse(payload)
 
 
 @require_POST
@@ -651,6 +864,121 @@ def public_rate_limit_or_429(request: HttpRequest) -> HttpResponse | None:
     return None
 
 
+def malware_scan_status_text(stored_file: StoredFile) -> str:
+    if stored_file.status == StoredFile.Status.AVAILABLE:
+        return "No malware detected"
+    if stored_file.status == StoredFile.Status.SCANNING:
+        return "Scan in progress"
+    if stored_file.status == StoredFile.Status.REVIEW:
+        return "Scan needs review"
+    return stored_file.get_status_display()
+
+
+def latest_allowed_download_at(stored_file: StoredFile):
+    return (
+        DownloadEvent.objects.filter(
+            stored_file=stored_file,
+            outcome=DownloadEvent.Outcome.ALLOWED,
+        )
+        .order_by("-created_at")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+
+
+def signature_filename_for(stored_file: StoredFile) -> str:
+    return f"{stored_file.original_filename}.sig"
+
+
+def sibling_signature_file(
+    stored_file: StoredFile, signature_file_id: int | None = None
+) -> StoredFile | None:
+    queryset = (
+        StoredFile.objects.select_related("folder")
+        .filter(
+            owner_id=stored_file.owner_id,
+            folder_id=stored_file.folder_id,
+            original_filename=signature_filename_for(stored_file),
+            status=StoredFile.Status.AVAILABLE,
+            deleted_at__isnull=True,
+        )
+        .exclude(pk=stored_file.pk)
+    )
+    if signature_file_id is not None:
+        queryset = queryset.filter(pk=signature_file_id)
+    return queryset.order_by("pk").first()
+
+
+def signature_artifact_for(
+    stored_file: StoredFile, signature_file_id: int | None = None
+) -> dict[str, object] | None:
+    signature_file = sibling_signature_file(stored_file, signature_file_id)
+    if signature_file:
+        return {
+            "filename": signature_file.original_filename,
+            "storage_key": signature_file.storage_key,
+            "size": signature_file.size,
+            "signature_file_id": signature_file.pk,
+        }
+    if signature_file_id is not None:
+        return None
+
+    storage_key = f"{stored_file.storage_key}.sig"
+    path = private_path(storage_key)
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return None
+    if not path.is_file():
+        return None
+    return {
+        "filename": signature_filename_for(stored_file),
+        "storage_key": storage_key,
+        "size": stat.st_size,
+    }
+
+
+def shared_file_or_404(share: PublicShare, file_id: int | None = None) -> StoredFile:
+    if file_id is None:
+        if share.target_type != PublicShare.TargetType.FILE:
+            raise Http404
+        stored_file = share.stored_file
+    else:
+        stored_file = get_object_or_404(StoredFile.objects.select_related("folder"), pk=file_id)
+    if (
+        not stored_file
+        or not stored_file.is_publicly_downloadable
+        or not file_belongs_to_share(stored_file, share)
+    ):
+        raise Http404
+    return stored_file
+
+
+def public_file_context(
+    *,
+    share: PublicShare,
+    stored_file: StoredFile,
+    download_url: str,
+    signature_download_url: str,
+    report_url: str,
+    report_form: AbuseReportForm,
+    containing_folder: Folder | None = None,
+) -> dict[str, object]:
+    context: dict[str, object] = {
+        "share": share,
+        "stored_file": stored_file,
+        "download_url": download_url,
+        "signature_download_url": signature_download_url,
+        "report_url": report_url,
+        "report_form": report_form,
+        "malware_scan_status": malware_scan_status_text(stored_file),
+        "last_downloaded_at": latest_allowed_download_at(stored_file),
+    }
+    if containing_folder:
+        context["containing_folder"] = containing_folder
+    return context
+
+
 def public_file(request: HttpRequest, slug: str) -> HttpResponse:
     limited = public_rate_limit_or_429(request)
     if limited:
@@ -662,13 +990,14 @@ def public_file(request: HttpRequest, slug: str) -> HttpResponse:
     return render(
         request,
         "fileshare/public_file.html",
-        {
-            "share": share,
-            "stored_file": stored_file,
-            "download_url": reverse("prepare_download", args=[share.slug]),
-            "report_url": reverse("report_share", args=[share.slug]),
-            "report_form": AbuseReportForm(),
-        },
+        public_file_context(
+            share=share,
+            stored_file=stored_file,
+            download_url=reverse("prepare_download", args=[share.slug]),
+            signature_download_url=reverse("prepare_signature_download", args=[share.slug]),
+            report_url=reverse("report_share", args=[share.slug]),
+            report_form=AbuseReportForm(),
+        ),
     )
 
 
@@ -721,14 +1050,17 @@ def public_folder_file(request: HttpRequest, slug: str, file_id: int) -> HttpRes
     return render(
         request,
         "fileshare/public_file.html",
-        {
-            "share": share,
-            "stored_file": stored_file,
-            "download_url": reverse("prepare_download_file", args=[share.slug, stored_file.pk]),
-            "report_url": reverse("report_share_file", args=[share.slug, stored_file.pk]),
-            "report_form": AbuseReportForm(),
-            "containing_folder": share.folder,
-        },
+        public_file_context(
+            share=share,
+            stored_file=stored_file,
+            download_url=reverse("prepare_download_file", args=[share.slug, stored_file.pk]),
+            signature_download_url=reverse(
+                "prepare_signature_download_file", args=[share.slug, stored_file.pk]
+            ),
+            report_url=reverse("report_share_file", args=[share.slug, stored_file.pk]),
+            report_form=AbuseReportForm(),
+            containing_folder=share.folder,
+        ),
     )
 
 
@@ -767,15 +1099,26 @@ def report_share(request: HttpRequest, slug: str, file_id: int | None = None) ->
         target = "fileshare/public_folder.html"
     context = {"share": share, "report_form": form}
     if reported_file:
-        context["stored_file"] = reported_file
-        context["download_url"] = reverse(
-            "prepare_download_file", args=[share.slug, reported_file.pk]
+        context = public_file_context(
+            share=share,
+            stored_file=reported_file,
+            download_url=reverse("prepare_download_file", args=[share.slug, reported_file.pk]),
+            signature_download_url=reverse(
+                "prepare_signature_download_file", args=[share.slug, reported_file.pk]
+            ),
+            report_url=reverse("report_share_file", args=[share.slug, reported_file.pk]),
+            report_form=form,
+            containing_folder=share.folder,
         )
-        context["report_url"] = reverse("report_share_file", args=[share.slug, reported_file.pk])
     elif share.stored_file_id:
-        context["stored_file"] = share.stored_file
-        context["download_url"] = reverse("prepare_download", args=[share.slug])
-        context["report_url"] = reverse("report_share", args=[share.slug])
+        context = public_file_context(
+            share=share,
+            stored_file=share.stored_file,
+            download_url=reverse("prepare_download", args=[share.slug]),
+            signature_download_url=reverse("prepare_signature_download", args=[share.slug]),
+            report_url=reverse("report_share", args=[share.slug]),
+            report_form=form,
+        )
     else:
         context["folder"] = share.folder
         context["tree"] = folder_tree(share.folder)
@@ -797,18 +1140,7 @@ def file_belongs_to_share(stored_file: StoredFile, share: PublicShare) -> bool:
 @require_POST
 def prepare_download(request: HttpRequest, slug: str, file_id: int | None = None) -> HttpResponse:
     share = live_share_or_404(slug)
-    if file_id is None:
-        if share.target_type != PublicShare.TargetType.FILE:
-            raise Http404
-        stored_file = share.stored_file
-    else:
-        stored_file = get_object_or_404(StoredFile, pk=file_id)
-    if (
-        not stored_file
-        or not stored_file.is_publicly_downloadable
-        or not file_belongs_to_share(stored_file, share)
-    ):
-        raise Http404
+    stored_file = shared_file_or_404(share, file_id)
 
     decision = check_download_request(request, stored_file.size)
     if not decision.allowed:
@@ -839,8 +1171,106 @@ def prepare_download(request: HttpRequest, slug: str, file_id: int | None = None
     return response
 
 
+@require_POST
+def prepare_signature_download(
+    request: HttpRequest, slug: str, file_id: int | None = None
+) -> HttpResponse:
+    share = live_share_or_404(slug)
+    stored_file = shared_file_or_404(share, file_id)
+    signature_artifact = signature_artifact_for(stored_file)
+    if not signature_artifact:
+        raise Http404
+
+    decision = check_download_request(request, int(signature_artifact["size"]))
+    if not decision.allowed:
+        DownloadEvent.objects.create(
+            stored_file=stored_file,
+            share=share,
+            ip_hash=request_ip_hash(request),
+            user_agent_hash=request_user_agent_hash(request),
+            outcome=DownloadEvent.Outcome.RATE_LIMITED,
+        )
+        response = HttpResponse("Too many downloads.", status=429)
+        response["Retry-After"] = str(decision.retry_after)
+        return response
+
+    token = create_download_token(
+        stored_file,
+        share,
+        request_ip_hash(request),
+        request_user_agent_hash(request),
+        concurrency_key=decision.concurrency_key,
+        slowed=decision.slowed,
+        limit_rate=decision.limit_rate,
+        asset="signature",
+        signature_file_id=signature_artifact.get("signature_file_id"),
+    )
+    url = reverse("download_file", args=[token])
+    response = redirect(url)
+    if decision.slowed:
+        response["X-Parafiles-Slowed"] = "1"
+    return response
+
+
 def token_cache_key(token: str) -> str:
     return "download-token-used:" + hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def private_download_response(
+    *,
+    storage_key: str,
+    filename: str,
+    size: int,
+    content_type: str,
+    limit_rate: int | None = None,
+) -> HttpResponse:
+    disposition = content_disposition(filename)
+    if settings.PARAFILES_SERVE_PRIVATE_DOWNLOADS:
+        response = FileResponse(
+            private_path(storage_key).open("rb"),
+            as_attachment=True,
+            filename=filename,
+        )
+    else:
+        response = HttpResponse()
+        response["X-Accel-Redirect"] = settings.PARAFILES_INTERNAL_DOWNLOAD_PREFIX + quote(
+            storage_key
+        )
+    response["Content-Type"] = content_type
+    response["Content-Length"] = str(size)
+    response["Content-Disposition"] = disposition
+    response["X-Content-Type-Options"] = "nosniff"
+    if limit_rate:
+        response["X-Accel-Limit-Rate"] = str(limit_rate)
+    return response
+
+
+def download_signature_file(
+    stored_file: StoredFile, share: PublicShare, token_payload: dict
+) -> HttpResponse:
+    if not stored_file.is_publicly_downloadable or not file_belongs_to_share(stored_file, share):
+        release_download_slot(token_payload.get("ck", ""))
+        raise Http404
+
+    signature_file_id = token_payload.get("signature_file_id")
+    signature_artifact = signature_artifact_for(
+        stored_file, signature_file_id if isinstance(signature_file_id, int) else None
+    )
+    if not signature_artifact:
+        release_download_slot(token_payload.get("ck", ""))
+        raise Http404
+
+    response = private_download_response(
+        storage_key=str(signature_artifact["storage_key"]),
+        filename=str(signature_artifact["filename"]),
+        size=int(signature_artifact["size"]),
+        content_type="application/pgp-signature",
+        limit_rate=token_payload["rate"]
+        if token_payload.get("slow") and token_payload.get("rate")
+        else None,
+    )
+    release_download_slot(token_payload.get("ck", ""))
+    return response
 
 
 def download_file(request: HttpRequest, token: str) -> HttpResponse:
@@ -856,6 +1286,12 @@ def download_file(request: HttpRequest, token: str) -> HttpResponse:
         )
     except (PermissionDenied, SuspiciousOperation):
         raise
+    asset = token_payload.get("asset", "file")
+    if asset == "signature":
+        return download_signature_file(stored_file, share, token_payload)
+    if asset != "file":
+        release_download_slot(token_payload.get("ck", ""))
+        raise SuspiciousOperation("Invalid download asset.")
     if not stored_file.is_publicly_downloadable or not file_belongs_to_share(stored_file, share):
         release_download_slot(token_payload.get("ck", ""))
         DownloadEvent.objects.create(
@@ -877,24 +1313,15 @@ def download_file(request: HttpRequest, token: str) -> HttpResponse:
     )
     StoredFile.objects.filter(pk=stored_file.pk).update(download_count=F("download_count") + 1)
 
-    disposition = content_disposition(stored_file.original_filename)
-    if settings.PARAFILES_SERVE_PRIVATE_DOWNLOADS:
-        response = FileResponse(
-            private_path(stored_file.storage_key).open("rb"),
-            as_attachment=True,
-            filename=stored_file.original_filename,
-        )
-    else:
-        response = HttpResponse()
-        response["X-Accel-Redirect"] = settings.PARAFILES_INTERNAL_DOWNLOAD_PREFIX + quote(
-            stored_file.storage_key
-        )
-    response["Content-Type"] = "application/octet-stream"
-    response["Content-Length"] = str(stored_file.size)
-    response["Content-Disposition"] = disposition
-    response["X-Content-Type-Options"] = "nosniff"
-    if token_payload.get("slow") and token_payload.get("rate"):
-        response["X-Accel-Limit-Rate"] = str(token_payload["rate"])
+    response = private_download_response(
+        storage_key=stored_file.storage_key,
+        filename=stored_file.original_filename,
+        size=stored_file.size,
+        content_type="application/octet-stream",
+        limit_rate=token_payload["rate"]
+        if token_payload.get("slow") and token_payload.get("rate")
+        else None,
+    )
     release_download_slot(token_payload.get("ck", ""))
     return response
 

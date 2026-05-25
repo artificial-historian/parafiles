@@ -18,20 +18,22 @@ def create_download_token(
     concurrency_key: str = "",
     slowed: bool = False,
     limit_rate: int = 0,
+    asset: str = "file",
+    signature_file_id: int | None = None,
 ) -> str:
-    return signing.dumps(
-        {
-            "file_id": stored_file.pk,
-            "share_id": share.pk,
-            "ip": ip_hash,
-            "ua": user_agent_hash,
-            "ck": concurrency_key,
-            "slow": slowed,
-            "rate": limit_rate,
-        },
-        salt=SALT,
-        compress=True,
-    )
+    payload = {
+        "file_id": stored_file.pk,
+        "share_id": share.pk,
+        "ip": ip_hash,
+        "ua": user_agent_hash,
+        "ck": concurrency_key,
+        "slow": slowed,
+        "rate": limit_rate,
+        "asset": asset,
+    }
+    if signature_file_id is not None:
+        payload["signature_file_id"] = signature_file_id
+    return signing.dumps(payload, salt=SALT, compress=True)
 
 
 def load_download_token(

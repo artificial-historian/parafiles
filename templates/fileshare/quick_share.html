@@ -1,0 +1,527 @@
+{% extends "base.html" %}
+{% block title %}Quick Share - Parafiles{% endblock %}
+{% block content %}
+<section class="quick-share-shell">
+  <div>
+    <h1>Quick Share</h1>
+    <p class="muted">Upload files and get share links as soon as they are ready.</p>
+  </div>
+
+  <div id="session-warning" class="message error" hidden>
+    Your session is no longer valid. <a href="{% url 'login' %}?next={% url 'quick_share' %}">Log in</a>, then reload this page.
+  </div>
+
+  <form id="quick-share-csrf">{% csrf_token %}</form>
+
+  <section id="drop-zone" class="quick-drop-zone" tabindex="0">
+    <div>
+      <strong>Drop files here</strong>
+      <span class="muted">or choose files</span>
+    </div>
+    <input id="file-input" type="file" multiple>
+  </section>
+
+  <section id="queue-panel" class="quick-queue" hidden>
+    <div class="split">
+      <h2>Queue</h2>
+      <button id="copy-all-button" type="button" class="copy-all-button" hidden>
+        <span aria-hidden="true">⧉</span> Copy all links
+      </button>
+    </div>
+    <div id="queue-list" class="quick-queue-list"></div>
+  </section>
+</section>
+
+<dialog id="folder-dialog" class="modal folder-picker">
+  <div class="modal-content">
+    <div class="split">
+      <div>
+        <h2>Folder</h2>
+        <p id="folder-dialog-file" class="muted"></p>
+      </div>
+      <button id="folder-dialog-close" type="button" class="link-button">Close</button>
+    </div>
+    <div id="folder-list" class="folder-list"></div>
+    <form id="folder-create-form" class="folder-create-form">
+      <select id="folder-create-parent" name="parent_id" aria-label="Parent folder"></select>
+      <input id="folder-create-name" name="name" maxlength="180" placeholder="New folder" required>
+      <button type="submit">Create</button>
+    </form>
+  </div>
+</dialog>
+
+<script>
+const quickShareUrls = {
+  uploadStart: "{% url 'upload_start' %}",
+  folderCreate: "{% url 'folder_create' %}",
+  folders: "{% url 'quick_share_folders' %}",
+  uploadFolder: "{% url 'quick_share_upload_folder' '00000000-0000-0000-0000-000000000000' %}",
+  uploadCancel: "{% url 'quick_share_cancel_upload' '00000000-0000-0000-0000-000000000000' %}",
+  fileFolder: "{% url 'quick_share_file_folder' 0 %}",
+};
+
+const csrfToken = document.querySelector("#quick-share-csrf input[name=csrfmiddlewaretoken]").value;
+const rootFolder = { id: {{ root_folder.pk }}, path: "{{ root_folder.logical_path|escapejs }}" };
+const dropZone = document.getElementById("drop-zone");
+const fileInput = document.getElementById("file-input");
+const queuePanel = document.getElementById("queue-panel");
+const queueList = document.getElementById("queue-list");
+const copyAllButton = document.getElementById("copy-all-button");
+const sessionWarning = document.getElementById("session-warning");
+const folderDialog = document.getElementById("folder-dialog");
+const folderDialogFile = document.getElementById("folder-dialog-file");
+const folderDialogClose = document.getElementById("folder-dialog-close");
+const folderList = document.getElementById("folder-list");
+const folderCreateForm = document.getElementById("folder-create-form");
+const folderCreateParent = document.getElementById("folder-create-parent");
+const folderCreateName = document.getElementById("folder-create-name");
+
+const rows = new Map();
+let folders = [];
+let activeFolderRowId = null;
+
+function uploadFolderUrl(uploadId) {
+  return quickShareUrls.uploadFolder.replace("00000000-0000-0000-0000-000000000000", uploadId);
+}
+
+function uploadCancelUrl(uploadId) {
+  return quickShareUrls.uploadCancel.replace("00000000-0000-0000-0000-000000000000", uploadId);
+}
+
+function fileFolderUrl(fileId) {
+  return quickShareUrls.fileFolder.replace("/0/", `/${fileId}/`);
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return "0 bytes";
+  const units = ["bytes", "KB", "MB", "GB"];
+  let size = bytes;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size = size / 1024;
+    unitIndex += 1;
+  }
+  return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function percent(row) {
+  if (!row.file.size) return 0;
+  return Math.min(100, Math.floor((row.bytesReceived / row.file.size) * 100));
+}
+
+function statusText(row) {
+  if (row.status === "starting") return "Starting";
+  if (row.status === "uploading") return `Uploading ${percent(row)}%`;
+  if (row.status === "paused") return `Paused at ${percent(row)}%`;
+  if (row.status === "finalizing") return "Finalizing";
+  if (row.status === "complete") return "Ready";
+  if (row.status === "canceled") return "Canceled";
+  if (row.status === "error") return row.error || "Upload failed";
+  return "Waiting";
+}
+
+function canPause(row) {
+  return row.status === "starting" || row.status === "uploading";
+}
+
+function canResume(row) {
+  return row.status === "paused";
+}
+
+function canCancel(row) {
+  return ["starting", "uploading", "paused", "waiting"].includes(row.status);
+}
+
+function renderRow(row) {
+  let item = document.getElementById(`quick-row-${row.id}`);
+  if (!item) {
+    item = document.createElement("div");
+    item.id = `quick-row-${row.id}`;
+    item.className = "quick-queue-row";
+    queueList.appendChild(item);
+  }
+  const rowPercent = percent(row);
+  const shareLink = row.shareUrl ? `
+    <div class="quick-share-link">
+      <a href="${row.shareUrl}" target="_blank" rel="noopener">${row.shareUrl}</a>
+      <button type="button" class="icon-button" data-action="copy" data-row-id="${row.id}" title="Copy link" aria-label="Copy link">⧉</button>
+    </div>
+  ` : "";
+  const pauseResume = canResume(row)
+    ? `<button type="button" data-action="resume" data-row-id="${row.id}">Resume</button>`
+    : canPause(row)
+      ? `<button type="button" data-action="pause" data-row-id="${row.id}">Pause</button>`
+      : "";
+  const cancel = canCancel(row)
+    ? `<button type="button" class="danger" data-action="cancel" data-row-id="${row.id}">Cancel</button>`
+    : "";
+  const folder = row.status !== "canceled"
+    ? `<button type="button" data-action="folder" data-row-id="${row.id}">Folder</button>`
+    : "";
+  item.innerHTML = `
+    <div class="quick-file-main">
+      <div>
+        <strong></strong>
+        <p class="muted"></p>
+      </div>
+      <span class="status ${row.status}">${statusText(row)}</span>
+    </div>
+    <progress max="100" value="${rowPercent}"></progress>
+    ${shareLink}
+    <div class="quick-row-actions">${pauseResume}${cancel}${folder}</div>
+  `;
+  item.querySelector("strong").textContent = row.file.name;
+  item.querySelector("p").textContent = `${formatBytes(row.file.size)} - ${row.folderPath || rootFolder.path}`;
+  updateCopyAll();
+}
+
+function renderQueue() {
+  queuePanel.hidden = rows.size === 0;
+  for (const row of rows.values()) {
+    renderRow(row);
+  }
+  updateCopyAll();
+}
+
+function updateCopyAll() {
+  const allRows = [...rows.values()];
+  const hasRows = allRows.length > 0;
+  const allComplete = hasRows && allRows.every((row) => row.status === "complete" && row.shareUrl);
+  copyAllButton.hidden = !allComplete;
+}
+
+function showSessionPrompt() {
+  sessionWarning.hidden = false;
+}
+
+async function parseJsonResponse(response) {
+  if (response.redirected || response.url.includes("/accounts/login/")) {
+    showSessionPrompt();
+    throw new Error("Session expired.");
+  }
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    if (response.status === 403) showSessionPrompt();
+    throw new Error("Unexpected server response.");
+  }
+  const payload = await response.json();
+  if (!response.ok) {
+    const errors = payload.errors || ["Request failed."];
+    throw new Error(Array.isArray(errors) ? errors.join(" ") : String(errors));
+  }
+  return payload;
+}
+
+async function postForm(url, fields, signal) {
+  const body = new FormData();
+  body.append("csrfmiddlewaretoken", csrfToken);
+  for (const [key, value] of Object.entries(fields)) {
+    body.append(key, value);
+  }
+  const response = await fetch(url, {
+    method: "POST",
+    body,
+    signal,
+    headers: { "Accept": "application/json" },
+  });
+  return parseJsonResponse(response);
+}
+
+async function refreshStatus(row) {
+  if (!row.statusUrl || !row.token) return;
+  const response = await fetch(row.statusUrl, {
+    headers: { "Accept": "application/json", "X-Upload-Token": row.token },
+  });
+  const payload = await parseJsonResponse(response);
+  row.bytesReceived = payload.bytes_received || row.bytesReceived;
+}
+
+async function startUploadSession(row) {
+  row.abortController = new AbortController();
+  const payload = await postForm(
+    quickShareUrls.uploadStart,
+    {
+      folder_id: row.folderId,
+      filename: row.file.name,
+      size: row.file.size,
+      content_type: row.file.type || "application/octet-stream",
+    },
+    row.abortController.signal,
+  );
+  row.uploadId = payload.upload_id;
+  row.token = payload.token;
+  row.chunkSize = payload.chunk_size || (8 * 1024 * 1024);
+  row.bytesReceived = payload.bytes_received || 0;
+  row.chunkUrl = payload.chunk_url;
+  row.statusUrl = payload.status_url;
+  row.finalizeUrl = payload.finalize_url;
+  await syncRowFolder(row);
+}
+
+async function uploadNextChunk(row) {
+  const chunk = new FormData();
+  const end = Math.min(row.bytesReceived + row.chunkSize, row.file.size);
+  chunk.append("csrfmiddlewaretoken", csrfToken);
+  chunk.append("token", row.token);
+  chunk.append("offset", row.bytesReceived);
+  chunk.append("chunk", row.file.slice(row.bytesReceived, end));
+  row.abortController = new AbortController();
+  const response = await fetch(row.chunkUrl, {
+    method: "POST",
+    body: chunk,
+    signal: row.abortController.signal,
+    headers: { "Accept": "application/json" },
+  });
+  const payload = await parseJsonResponse(response);
+  row.bytesReceived = payload.bytes_received || row.bytesReceived;
+}
+
+async function finalizeUpload(row) {
+  row.status = "finalizing";
+  renderRow(row);
+  const payload = await postForm(row.finalizeUrl, { token: row.token, quick_share: "1" });
+  row.fileId = payload.file_id;
+  row.shareUrl = payload.share_url;
+  row.status = "complete";
+  row.bytesReceived = row.file.size;
+  renderRow(row);
+}
+
+async function uploadFile(row) {
+  if (row.running || row.status === "complete" || row.status === "canceled") return;
+  row.running = true;
+  row.status = row.uploadId ? "uploading" : "starting";
+  renderRow(row);
+  try {
+    if (!row.uploadId) {
+      await startUploadSession(row);
+    } else {
+      await refreshStatus(row);
+    }
+    while (!row.paused && !row.canceled && row.bytesReceived < row.file.size) {
+      row.status = "uploading";
+      renderRow(row);
+      await uploadNextChunk(row);
+    }
+    if (row.paused || row.canceled) return;
+    await finalizeUpload(row);
+  } catch (error) {
+    if (error.name === "AbortError" && (row.paused || row.canceled)) {
+      row.status = row.canceled ? "canceled" : "paused";
+    } else {
+      row.status = "error";
+      row.error = error.message || "Upload failed.";
+    }
+    renderRow(row);
+  } finally {
+    row.running = false;
+    row.abortController = null;
+    if (row.resumeRequested && !row.canceled) {
+      row.resumeRequested = false;
+      uploadFile(row);
+    }
+  }
+}
+
+function enqueueFiles(fileList) {
+  const files = [...fileList].filter((file) => file.size > 0);
+  for (const file of files) {
+    const row = {
+      id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+      file,
+      folderId: rootFolder.id,
+      folderPath: rootFolder.path,
+      bytesReceived: 0,
+      chunkSize: 8 * 1024 * 1024,
+      status: "waiting",
+      paused: false,
+      canceled: false,
+      running: false,
+      resumeRequested: false,
+    };
+    rows.set(row.id, row);
+    renderQueue();
+    uploadFile(row);
+  }
+}
+
+function pauseRow(row) {
+  row.paused = true;
+  row.status = "paused";
+  if (row.abortController) row.abortController.abort();
+  renderRow(row);
+}
+
+function resumeRow(row) {
+  row.paused = false;
+  row.status = "uploading";
+  if (row.running) {
+    row.resumeRequested = true;
+  } else {
+    uploadFile(row);
+  }
+  renderRow(row);
+}
+
+async function cancelRow(row) {
+  row.canceled = true;
+  row.paused = false;
+  if (row.abortController) row.abortController.abort();
+  if (row.uploadId && row.token) {
+    try {
+      await postForm(uploadCancelUrl(row.uploadId), { token: row.token });
+    } catch (error) {
+      row.error = error.message;
+    }
+  }
+  row.status = "canceled";
+  renderRow(row);
+}
+
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textArea = document.createElement("textarea");
+  textArea.value = text;
+  textArea.style.position = "fixed";
+  textArea.style.left = "-9999px";
+  document.body.appendChild(textArea);
+  textArea.focus();
+  textArea.select();
+  document.execCommand("copy");
+  textArea.remove();
+}
+
+async function loadFolders() {
+  const response = await fetch(quickShareUrls.folders, { headers: { "Accept": "application/json" } });
+  const payload = await parseJsonResponse(response);
+  folders = payload.folders || [];
+  renderFolders();
+}
+
+function renderFolders() {
+  folderList.innerHTML = "";
+  folderCreateParent.innerHTML = "";
+  for (const folder of folders) {
+    const option = document.createElement("option");
+    option.value = folder.id;
+    option.textContent = folder.path;
+    folderCreateParent.appendChild(option);
+
+    const item = document.createElement("div");
+    item.className = "folder-picker-row";
+    item.style.setProperty("--depth", folder.depth);
+    item.innerHTML = `
+      <span></span>
+      <button type="button" data-folder-id="${folder.id}">Choose</button>
+    `;
+    item.querySelector("span").textContent = folder.path;
+    folderList.appendChild(item);
+  }
+}
+
+async function syncRowFolder(row) {
+  if (!row.uploadId && !row.fileId) return;
+  if (row.fileId) {
+    await postForm(fileFolderUrl(row.fileId), { folder_id: row.folderId });
+  } else if (row.uploadId && row.token && row.status !== "complete") {
+    await postForm(uploadFolderUrl(row.uploadId), { token: row.token, folder_id: row.folderId });
+  }
+}
+
+async function assignFolder(row, folder) {
+  row.folderId = folder.id;
+  row.folderPath = folder.path;
+  renderRow(row);
+  await syncRowFolder(row);
+  renderRow(row);
+}
+
+async function openFolderDialog(row) {
+  activeFolderRowId = row.id;
+  folderDialogFile.textContent = row.file.name;
+  await loadFolders();
+  folderCreateParent.value = row.folderId;
+  folderDialog.showModal();
+}
+
+queueList.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+  const row = rows.get(button.dataset.rowId);
+  if (!row) return;
+  if (button.dataset.action === "pause") pauseRow(row);
+  if (button.dataset.action === "resume") resumeRow(row);
+  if (button.dataset.action === "cancel") await cancelRow(row);
+  if (button.dataset.action === "folder") await openFolderDialog(row);
+  if (button.dataset.action === "copy" && row.shareUrl) {
+    await copyText(row.shareUrl);
+    button.textContent = "Copied";
+    setTimeout(() => { button.textContent = "⧉"; }, 1200);
+  }
+});
+
+folderList.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-folder-id]");
+  if (!button || !activeFolderRowId) return;
+  const row = rows.get(activeFolderRowId);
+  const folder = folders.find((item) => String(item.id) === button.dataset.folderId);
+  if (!row || !folder) return;
+  await assignFolder(row, folder);
+  folderDialog.close();
+});
+
+folderCreateForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!activeFolderRowId) return;
+  const row = rows.get(activeFolderRowId);
+  if (!row) return;
+  const payload = await postForm(quickShareUrls.folderCreate, {
+    parent_id: folderCreateParent.value,
+    name: folderCreateName.value,
+  });
+  folderCreateName.value = "";
+  await loadFolders();
+  const folder = folders.find((item) => item.id === payload.id);
+  if (folder) {
+    await assignFolder(row, folder);
+    folderDialog.close();
+  }
+});
+
+folderDialogClose.addEventListener("click", () => folderDialog.close());
+
+copyAllButton.addEventListener("click", async () => {
+  const urls = [...rows.values()].map((row) => row.shareUrl).filter(Boolean);
+  await copyText(urls.join("\n"));
+  copyAllButton.textContent = "Copied";
+  setTimeout(() => { copyAllButton.innerHTML = '<span aria-hidden="true">⧉</span> Copy all links'; }, 1200);
+});
+
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    fileInput.click();
+  }
+});
+dropZone.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  dropZone.classList.add("dragover");
+});
+dropZone.addEventListener("dragleave", () => {
+  dropZone.classList.remove("dragover");
+});
+dropZone.addEventListener("drop", (event) => {
+  event.preventDefault();
+  dropZone.classList.remove("dragover");
+  enqueueFiles(event.dataTransfer.files);
+});
+fileInput.addEventListener("change", () => {
+  enqueueFiles(fileInput.files);
+  fileInput.value = "";
+});
+</script>
+{% endblock %}

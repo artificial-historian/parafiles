@@ -74,6 +74,11 @@ button.danger {
   background: var(--danger);
 }
 
+button.success {
+  border-color: #05603a;
+  background: var(--ok);
+}
+
 button.primary {
   min-width: 10rem;
 }
@@ -244,6 +249,219 @@ textarea {
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
   padding: 1rem 0;
+}
+
+.download-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.quick-share-shell {
+  width: min(760px, 100%);
+  margin: 0 auto;
+}
+
+.quick-drop-zone {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 15rem;
+  margin: 1.25rem 0;
+  border: 2px dashed #9aa7bb;
+  border-radius: 8px;
+  background: #fff;
+  text-align: center;
+  cursor: pointer;
+}
+
+.quick-drop-zone.dragover,
+.quick-drop-zone:focus {
+  border-color: var(--accent);
+  outline: 3px solid rgb(45 108 223 / 16%);
+}
+
+.quick-drop-zone strong,
+.quick-drop-zone span {
+  display: block;
+}
+
+.quick-drop-zone input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.quick-queue h2 {
+  margin: 0;
+}
+
+.quick-queue-list {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.quick-queue-row {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.85rem;
+}
+
+.quick-file-main,
+.quick-share-link,
+.quick-row-actions,
+.folder-picker-row,
+.folder-create-form {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.quick-file-main {
+  justify-content: space-between;
+}
+
+.quick-file-main p {
+  margin: 0.2rem 0 0;
+}
+
+.quick-share-link a {
+  overflow-wrap: anywhere;
+}
+
+.icon-button {
+  min-width: 2.25rem;
+  padding: 0.45rem;
+}
+
+.copy-all-button {
+  white-space: nowrap;
+}
+
+.folder-picker {
+  max-height: min(720px, calc(100vh - 2rem));
+}
+
+.folder-list {
+  display: grid;
+  gap: 0.35rem;
+  max-height: 20rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.45rem;
+}
+
+.folder-picker-row {
+  justify-content: space-between;
+  padding-left: calc(var(--depth) * 1rem);
+}
+
+.folder-picker-row span {
+  overflow-wrap: anywhere;
+}
+
+.folder-create-form {
+  align-items: end;
+}
+
+.folder-create-form select {
+  flex: 1 1 12rem;
+}
+
+.folder-create-form input {
+  flex: 2 1 14rem;
+}
+
+.breadcrumbs,
+.folder-sidebar,
+.files-main,
+.files-list,
+.share-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  color: var(--muted);
+}
+
+.files-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.32fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.folder-sidebar h2,
+.files-main h2 {
+  margin-top: 0;
+}
+
+.folder-tree-row {
+  display: block;
+  padding: 0.45rem 0.55rem 0.45rem calc(0.55rem + var(--depth, 0) * 0.8rem);
+  border-radius: 6px;
+  color: var(--text);
+}
+
+.folder-tree-row:hover,
+.folder-tree-row.current {
+  background: #eef1f6;
+  text-decoration: none;
+}
+
+.file-browser-row,
+.share-list-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.75fr) minmax(220px, 1fr) minmax(240px, auto);
+  gap: 0.75rem;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.8rem;
+}
+
+.file-browser-row.folder-up {
+  grid-template-columns: minmax(180px, 0.75fr) minmax(220px, 1fr);
+  color: var(--text);
+}
+
+.item-name {
+  display: block;
+  font-weight: 700;
+}
+
+.share-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.share-url {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.item-actions {
+  justify-content: flex-end;
+}
+
+.share-list-row {
+  grid-template-columns: minmax(260px, 1fr) minmax(220px, auto);
 }
 
 .quota {
@@ -492,6 +710,17 @@ progress {
 
   .grid-two {
     grid-template-columns: 1fr;
+  }
+
+  .files-layout,
+  .file-browser-row,
+  .file-browser-row.folder-up,
+  .share-list-row {
+    grid-template-columns: 1fr;
+  }
+
+  .item-actions {
+    justify-content: flex-start;
   }
 
   .metrics {

@@ -250,6 +250,98 @@ class ParafilesFlowTests(TestCase):
         reused = self.client.get(prepare["Location"])
         self.assertEqual(reused.status_code, 403)
 
+    def test_quick_share_requires_login_and_renders_for_uploader(self):
+        response = self.client.get(reverse("quick_share"))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith(reverse("login")))
+        self.assertIn("next=/share/", response["Location"])
+
+        user = self.make_uploader()
+        self.client.force_login(user)
+        response = self.client.get(reverse("quick_share"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Drop files here")
+        self.assertContains(response, reverse("quick_share_folders"))
+        self.assertContains(response, reverse("upload_start"))
+
+    def test_quick_share_finalize_creates_enabled_file_share(self):
+        user = self.make_uploader()
+        self.client.force_login(user)
+        body = b"quick share package"
+        start = self.client.post(
+            reverse("upload_start"),
+            {
+                "folder_id": Folder.get_root(user).pk,
+                "filename": "quick.zip",
+                "size": len(body),
+                "content_type": "application/zip",
+            },
+            HTTP_ACCEPT="application/json",
+        )
+        payload = start.json()
+        chunk = self.client.post(
+            payload["chunk_url"],
+            {"token": payload["token"], "offset": 0, "chunk": SimpleUploadedFile("quick.zip", body)},
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(chunk.status_code, 200)
+
+        finalized = self.client.post(
+            payload["finalize_url"],
+            {"token": payload["token"], "quick_share": "1"},
+            HTTP_ACCEPT="application/json",
+        )
+
+        self.assertEqual(finalized.status_code, 200)
+        finalized_payload = finalized.json()
+        stored_file = StoredFile.objects.get(owner=user, original_filename="quick.zip")
+        share = PublicShare.objects.get(stored_file=stored_file)
+        self.assertTrue(share.is_enabled)
+        self.assertEqual(finalized_payload["file_id"], stored_file.pk)
+        self.assertIn(reverse("public_file", args=[share.slug]), finalized_payload["share_url"])
+
+    def test_quick_share_folder_apis_update_uploads_and_files(self):
+        user = self.make_uploader()
+        root = Folder.get_root(user)
+        target = Folder.objects.create(owner=user, parent=root, name="Shared")
+        stored_file = self.make_available_file(user, root, name="move-me.zip")
+        self.client.force_login(user)
+
+        folders = self.client.get(reverse("quick_share_folders"), HTTP_ACCEPT="application/json")
+        self.assertEqual(folders.status_code, 200)
+        self.assertIn("/Shared", [item["path"] for item in folders.json()["folders"]])
+
+        start = self.client.post(
+            reverse("upload_start"),
+            {
+                "folder_id": root.pk,
+                "filename": "queued.zip",
+                "size": 12,
+                "content_type": "application/zip",
+            },
+            HTTP_ACCEPT="application/json",
+        )
+        upload_payload = start.json()
+        moved_upload = self.client.post(
+            reverse("quick_share_upload_folder", args=[upload_payload["upload_id"]]),
+            {"token": upload_payload["token"], "folder_id": target.pk},
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(moved_upload.status_code, 200)
+        self.assertEqual(moved_upload.json()["folder"]["path"], "/Shared")
+        session = UploadSession.objects.get(upload_id=upload_payload["upload_id"])
+        self.assertEqual(session.folder, target)
+
+        moved_file = self.client.post(
+            reverse("quick_share_file_folder", args=[stored_file.pk]),
+            {"folder_id": target.pk},
+            HTTP_ACCEPT="application/json",
+        )
+        self.assertEqual(moved_file.status_code, 200)
+        stored_file.refresh_from_db()
+        self.assertEqual(stored_file.folder, target)
+
     def test_upload_rejects_out_of_order_chunk(self):
         user = self.make_uploader()
         self.client.force_login(user)
@@ -417,6 +509,65 @@ class ParafilesFlowTests(TestCase):
         self.assertContains(response, reverse("file_rename", args=[StoredFile.objects.get(original_filename="demo.zip").pk]))
         self.assertContains(response, "Move")
 
+    def test_files_and_shares_page_lists_files_folders_and_share_actions(self):
+        user = self.make_uploader()
+        root = Folder.get_root(user)
+        folder = Folder.objects.create(owner=user, parent=root, name="Packages")
+        stored_file = self.make_available_file(user, root, name="demo.zip")
+        file_share = PublicShare.objects.create(
+            owner=user,
+            target_type=PublicShare.TargetType.FILE,
+            stored_file=stored_file,
+        )
+        folder_share = PublicShare.objects.create(
+            owner=user,
+            target_type=PublicShare.TargetType.FOLDER,
+            folder=folder,
+        )
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("files_and_shares"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Files & Shares")
+        self.assertContains(response, "Packages")
+        self.assertContains(response, "demo.zip")
+        self.assertContains(response, reverse("files_and_shares") + f"?folder={folder.pk}")
+        self.assertContains(response, reverse("folder_move", args=[folder.pk]))
+        self.assertContains(response, reverse("folder_delete", args=[folder.pk]))
+        self.assertContains(response, reverse("file_move", args=[stored_file.pk]))
+        self.assertContains(response, reverse("file_delete", args=[stored_file.pk]))
+        self.assertContains(response, reverse("share_regenerate", args=[file_share.pk]))
+        self.assertContains(response, reverse("share_regenerate", args=[folder_share.pk]))
+        self.assertContains(response, reverse("public_file", args=[file_share.slug]))
+        self.assertContains(response, reverse("public_folder", args=[folder_share.slug]))
+
+    def test_files_and_shares_actions_return_to_requested_page(self):
+        user = self.make_uploader()
+        root = Folder.get_root(user)
+        source = Folder.objects.create(owner=user, parent=root, name="Source")
+        target = Folder.objects.create(owner=user, parent=root, name="Target")
+        stored_file = self.make_available_file(user, source, name="move-me.zip")
+        self.client.force_login(user)
+        next_url = f"{reverse('files_and_shares')}?folder={source.pk}"
+
+        moved = self.client.post(
+            reverse("file_move", args=[stored_file.pk]),
+            {"target_folder_id": target.pk, "next": next_url},
+        )
+        self.assertEqual(moved.status_code, 302)
+        self.assertEqual(moved["Location"], next_url)
+        stored_file.refresh_from_db()
+        self.assertEqual(stored_file.folder, target)
+
+        created = self.client.post(
+            reverse("folder_create"),
+            {"parent_id": source.pk, "name": "Nested", "next": next_url},
+        )
+        self.assertEqual(created.status_code, 302)
+        self.assertEqual(created["Location"], next_url)
+        self.assertTrue(Folder.objects.filter(owner=user, parent=source, name="Nested").exists())
+
     def test_uploader_can_edit_file_metadata_and_public_page_shows_it(self):
         user = self.make_uploader()
         stored_file = self.make_available_file(user, Folder.get_root(user), name="plain.zip")
@@ -443,6 +594,63 @@ class ParafilesFlowTests(TestCase):
         self.assertContains(public, "Modern Kitchen Set")
         self.assertContains(public, "Paralives 1.0")
         self.assertContains(public, "Updated swatches.")
+
+    def test_public_file_page_shows_scan_download_stats_and_signature_action(self):
+        user = self.make_uploader()
+        stored_file = self.make_available_file(user, Folder.get_root(user), name="plain.zip")
+        stored_file.download_count = 4
+        stored_file.save(update_fields=["download_count"])
+        share = PublicShare.objects.create(
+            owner=user, target_type=PublicShare.TargetType.FILE, stored_file=stored_file
+        )
+        DownloadEvent.objects.create(
+            stored_file=stored_file,
+            share=share,
+            ip_hash="ip",
+            user_agent_hash="ua",
+            bytes_served=stored_file.size,
+            outcome=DownloadEvent.Outcome.ALLOWED,
+        )
+
+        response = self.client.get(reverse("public_file", args=[share.slug]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Malware scan")
+        self.assertContains(response, "No malware detected")
+        self.assertContains(response, "Downloads")
+        self.assertContains(response, "4")
+        self.assertContains(response, "Last downloaded")
+        self.assertContains(response, "Download .sig")
+        self.assertContains(response, reverse("prepare_signature_download", args=[share.slug]))
+        self.assertNotContains(response, "SHA-256")
+        self.assertNotContains(response, ">Available<")
+
+    def test_signature_download_serves_sidecar_without_counting_file_download(self):
+        user = self.make_uploader()
+        stored_file = self.make_available_file(user, Folder.get_root(user), name="plain.zip")
+        private_path(f"{stored_file.storage_key}.sig").write_bytes(b"signature-bytes")
+        share = PublicShare.objects.create(
+            owner=user, target_type=PublicShare.TargetType.FILE, stored_file=stored_file
+        )
+
+        prepared = self.client.post(reverse("prepare_signature_download", args=[share.slug]))
+        self.assertEqual(prepared.status_code, 302)
+        response = self.client.get(prepared["Location"])
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(b"".join(response.streaming_content), b"signature-bytes")
+        self.assertEqual(
+            response["Content-Disposition"],
+            'attachment; filename="plain.zip.sig"; filename*=UTF-8\'\'plain.zip.sig',
+        )
+        stored_file.refresh_from_db()
+        self.assertEqual(stored_file.download_count, 0)
+        self.assertFalse(
+            DownloadEvent.objects.filter(
+                stored_file=stored_file,
+                outcome=DownloadEvent.Outcome.ALLOWED,
+            ).exists()
+        )
 
     def test_account_settings_show_usage_and_update_email(self):
         user = self.make_uploader()

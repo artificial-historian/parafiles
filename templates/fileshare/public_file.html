@@ -13,9 +13,10 @@
     {% if stored_file.version %}<div><dt>Version</dt><dd>{{ stored_file.version }}</dd></div>{% endif %}
     {% if stored_file.game_version %}<div><dt>Game</dt><dd>{{ stored_file.game_version }}</dd></div>{% endif %}
     <div><dt>Size</dt><dd>{{ stored_file.size|filesizeformat }}</dd></div>
-    <div><dt>Scan</dt><dd>{{ stored_file.get_status_display }}</dd></div>
+    <div><dt>Malware scan</dt><dd>{{ malware_scan_status }}</dd></div>
     <div><dt>Uploaded</dt><dd>{{ stored_file.uploaded_at }}</dd></div>
-    <div><dt>SHA-256</dt><dd class="hash">{{ stored_file.sha256 }}</dd></div>
+    <div><dt>Downloads</dt><dd>{{ stored_file.download_count }}</dd></div>
+    <div><dt>Last downloaded</dt><dd>{{ last_downloaded_at|default:"Never" }}</dd></div>
   </dl>
   {% if stored_file.changelog %}
     <section class="release-notes">
@@ -23,10 +24,16 @@
       <p>{{ stored_file.changelog|linebreaksbr }}</p>
     </section>
   {% endif %}
-  <form method="post" action="{{ download_url }}">
-    {% csrf_token %}
-    <button type="submit" class="primary">Download</button>
-  </form>
+  <div class="download-actions">
+    <form method="post" action="{{ download_url }}">
+      {% csrf_token %}
+      <button type="submit" class="primary">Download</button>
+    </form>
+    <form method="post" action="{{ signature_download_url }}">
+      {% csrf_token %}
+      <button type="submit" class="primary success">Download .sig</button>
+    </form>
+  </div>
 </section>
 
 <section class="narrow panel">
