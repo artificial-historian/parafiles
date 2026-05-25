@@ -13,4 +13,4 @@ ExecStart=/srv/parafiles/venv/bin/python manage.py cleanup_uploads
 PrivateTmp=true
 NoNewPrivileges=true
 ProtectSystem=full
-ReadWritePaths=/srv/parafiles/private_uploads /srv/parafiles/upload_sessions
+ReadWritePaths=/srv/data/allfiles/parafiles/private_uploads /srv/data/allfiles/parafiles/upload_sessions
